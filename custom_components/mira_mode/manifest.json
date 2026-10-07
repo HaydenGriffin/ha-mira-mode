@@ -1,0 +1,23 @@
+{
+  "domain": "mira_mode",
+  "name": "Mira Mode",
+  "bluetooth": [
+    {
+      "service_uuid": "267f0001-eb15-43f5-94c3-67d2221188f7",
+      "connectable": true
+    },
+    {
+      "local_name": "Mira*",
+      "connectable": true
+    }
+  ],
+  "codeowners": ["@HaydenGriffin"],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters"],
+  "documentation": "https://github.com/HaydenGriffin/ha-mira-mode",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/HaydenGriffin/ha-mira-mode/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

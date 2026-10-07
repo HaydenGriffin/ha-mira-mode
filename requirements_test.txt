@@ -1,0 +1,13 @@
+# Test harness pinned to Home Assistant 2026.9.x, plus the Bluetooth stack
+# that HA's bluetooth/usb components need (not installed by the harness).
+pytest-homeassistant-custom-component==0.13.367
+homeassistant==2026.9.4
+bleak==3.0.2
+bleak-retry-connector==4.7.0
+bluetooth-adapters==2.4.0
+bluetooth-auto-recovery==1.6.4
+bluetooth-data-tools==1.29.24
+dbus-fast==5.0.22
+habluetooth==6.26.11
+aiousbwatcher==1.1.2
+serialx==1.10.0

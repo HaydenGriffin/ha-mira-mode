@@ -1,0 +1,48 @@
+ha-mira-mode
+Copyright (c) 2026 Hayden Griffin
+
+This project builds on the work of others.
+
+------------------------------------------------------------------------------
+mira-mode-control (miramode)
+https://github.com/ryan-shaw/mira-mode-control
+------------------------------------------------------------------------------
+
+Ryan Shaw reverse engineered the Bluetooth LE protocol of current-generation
+Mira Mode valves (GATT service 267f0001-eb15-43f5-94c3-67d2221188f7) and
+published it as the miramode Python library. This integration's protocol
+module ports that library's frame format, checksum, opcodes, state layout and
+frame reassembly, and its tests reuse replies the library's author recorded
+from real hardware. Without that work this integration would not exist.
+
+Used under the following licence:
+
+MIT License
+
+Copyright (c) 2026 Ryan Shaw
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+------------------------------------------------------------------------------
+Trademarks
+------------------------------------------------------------------------------
+
+Mira, Mira Mode and Mira Showers are trademarks of their respective owners.
+This project is not affiliated with, endorsed by or supported by Mira Showers
+or Kohler.

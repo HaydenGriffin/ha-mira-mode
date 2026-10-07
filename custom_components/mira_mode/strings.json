@@ -1,0 +1,109 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Choose your valve",
+        "description": "Pick a valve Home Assistant can see, or type its Bluetooth address (for example `AA:BB:CC:DD:EE:FF`). Close the Mira app on every phone first: the valve accepts only one connection at a time.",
+        "data": {
+          "address": "Bluetooth address"
+        },
+        "data_description": {
+          "address": "Valves are discovered through any connectable Bluetooth adapter or proxy."
+        }
+      },
+      "bluetooth_confirm": {
+        "description": "Set up {name}? You will pair with it next, so have the shower controller within reach."
+      },
+      "pair_method": {
+        "title": "Pair with the valve",
+        "description": "The valve only talks over a bonded Bluetooth connection, and the bond lives on the adapter or proxy that connects to it. A bond made on a different adapter or phone does not count.",
+        "menu_options": {
+          "pair": "Pair now (valve in pairing mode)",
+          "already_paired": "This adapter is already paired"
+        }
+      },
+      "pair": {
+        "title": "Put the valve in pairing mode",
+        "description": "1. Close the Mira app on every phone.\n2. Press and hold the button on the front of the shower controller for about 5 seconds, until it flashes. On a dial model, use Menu, Settings, Connect.\n3. Within 30 seconds, select **Submit**.\n\nHome Assistant will bond with {address} and read its state. No water will run."
+      },
+      "already_paired": {
+        "title": "Connect over the existing bond",
+        "description": "Home Assistant will connect to {address} and read its state. No water will run. If this fails, go back and pair instead."
+      }
+    },
+    "error": {
+      "invalid_address": "That isn't a Bluetooth address. Use the form AA:BB:CC:DD:EE:FF.",
+      "not_found": "No connectable Bluetooth adapter or proxy can see the valve right now. Check that a proxy is in range and the valve has power.",
+      "pairing_failed": "Pairing failed. Make sure the controller is flashing and the Mira app is closed, then try again. Some proxies cannot pair; see the README for pairing on the proxy itself.",
+      "cannot_connect": "Connected, but the valve didn't answer. It usually means another device (often the Mira app) holds the connection, or the adapter has no bond with the valve.",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "not_supported": "This looks like an older Mira Mode valve, which uses a different protocol that this integration doesn't support.",
+      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Outlets",
+        "description": "Name each outlet the way it is plumbed in your home (for example Shower, Bath or Handset). Leave a label empty to hide that outlet. The valve's own presets show which outlet feeds what.",
+        "data": {
+          "outlet_1": "Outlet 1",
+          "outlet_2": "Outlet 2",
+          "outlet_3": "Outlet 3"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "running": { "name": "Running" }
+    },
+    "button": {
+      "stop": { "name": "Stop" }
+    },
+    "number": {
+      "temperature": { "name": "Temperature" },
+      "flow": { "name": "Flow" }
+    },
+    "sensor": {
+      "water_temperature": { "name": "Water temperature" }
+    },
+    "switch": {
+      "outlet": { "name": "Outlet" }
+    }
+  },
+  "exceptions": {
+    "not_found": {
+      "message": "No connectable Bluetooth adapter or proxy can see the valve."
+    },
+    "communication_error": {
+      "message": "Couldn't talk to the valve: {error}"
+    },
+    "command_rejected": {
+      "message": "The valve rejected the command ({error})."
+    },
+    "not_following": {
+      "message": "The valve acknowledged the command but isn't running the outlets that were asked for."
+    }
+  },
+  "services": {
+    "start": {
+      "name": "Start",
+      "description": "Runs an outlet at a temperature and flow. This runs real hot water.",
+      "fields": {
+        "temperature": {
+          "name": "Temperature",
+          "description": "Water temperature, 30-45 °C. Defaults to the Temperature setting."
+        },
+        "flow": {
+          "name": "Flow",
+          "description": "Flow, 1-100 %. Defaults to the Flow setting."
+        }
+      }
+    }
+  }
+}

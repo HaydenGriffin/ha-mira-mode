@@ -1,0 +1,29 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "running": {
+        "default": "mdi:shower-head",
+        "state": { "off": "mdi:shower" }
+      }
+    },
+    "button": {
+      "stop": { "default": "mdi:water-off" }
+    },
+    "number": {
+      "temperature": { "default": "mdi:thermometer-water" },
+      "flow": { "default": "mdi:water-percent" }
+    },
+    "sensor": {
+      "water_temperature": { "default": "mdi:thermometer-water" }
+    },
+    "switch": {
+      "outlet": {
+        "default": "mdi:shower-head",
+        "state": { "off": "mdi:shower" }
+      }
+    }
+  },
+  "services": {
+    "start": { "service": "mdi:shower-head" }
+  }
+}

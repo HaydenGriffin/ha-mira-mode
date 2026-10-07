@@ -1,0 +1,21 @@
+start:
+  target:
+    entity:
+      integration: mira_mode
+      domain: switch
+  fields:
+    temperature:
+      example: 39
+      selector:
+        number:
+          min: 30
+          max: 45
+          step: 0.5
+          unit_of_measurement: "°C"
+    flow:
+      example: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
