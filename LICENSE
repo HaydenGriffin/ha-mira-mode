@@ -19,10 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-The valve protocol implementation (custom_components/mira_mode/protocol.py)
-and the recorded test vectors (tests/captures.py) are derived from
-mira-mode-control, Copyright (c) 2026 Ryan Shaw, also under the MIT License.
-See NOTICE for the full upstream notice.
