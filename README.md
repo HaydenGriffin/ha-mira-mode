@@ -22,6 +22,7 @@ on the protocol work of
 
 <p align="center">
   <img src="docs/images/device-page.png" alt="The Mira Mode device page in Home Assistant, with outlet switches, temperature and flow sliders, a stop button and the water temperature" width="820">
+  <br><sub>Illustration with demo values.</sub>
 </p>
 
 > [!WARNING]
@@ -75,7 +76,13 @@ on the protocol work of
 
 Development and live testing used a current-generation dual-outlet valve.
 Status reads and remote start and stop were verified on it through a
-Bluetooth proxy. Other valves in the current range should work, but only the
+Bluetooth proxy.
+
+> **0.1.0 status:** the protocol, start and stop were proven on hardware with an earlier, YAML-configured version
+> of this code. The setup flow, in-flow pairing and per-outlet switching in this release are covered by tests against
+> a simulated valve but haven't been run on a real valve yet. Reports either way are very welcome.
+
+Other valves in the current range should work, but only the
 outlets your unit actually has will do anything.
 
 **Bluetooth:** you need a connectable adapter or proxy that can reach the
