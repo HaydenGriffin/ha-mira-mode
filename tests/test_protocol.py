@@ -252,7 +252,7 @@ class TestText:
         assert p.decode_text(captures.NAME) == "Bathroom"
 
     def test_serial(self) -> None:
-        assert p.decode_text(captures.SERIAL) == "3140090125121946"
+        assert p.decode_text(captures.SERIAL) == "0000111122223333"
 
     @pytest.mark.parametrize("raw", [b"\x00" * 16, b"\x03\x9f\x00\xe2"])
     def test_rejects_non_text(self, raw: bytes) -> None:

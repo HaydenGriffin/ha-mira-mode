@@ -24,7 +24,7 @@ from custom_components.mira_mode.protocol import (
 from . import captures
 
 ADDRESS = "AA:BB:CC:DD:EE:FF"
-SERIAL = "3140090125121946"
+SERIAL = "0000111122223333"
 
 IDLE = decode_state(captures.STATE_IDLE)
 RUNNING = decode_state(captures.STATE_RUNNING)

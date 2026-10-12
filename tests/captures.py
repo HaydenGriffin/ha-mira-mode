@@ -38,8 +38,9 @@ STATE_STOPPED = payload("21 20 00 00 00 00 00 00 80 00 00 00 10 00 01 03 00 01")
 #: Opcode 0x44: the valve is named after where it is installed.
 NAME = payload("42 61 74 68 72 6f 6f 6d 00 00 00 00 00 00 00 00")
 
-#: Opcode 0x40, as printed on the unit.
-SERIAL = payload("33 31 34 30 30 39 30 31 32 35 31 32 31 39 34 36 00 00")
+#: Opcode 0x40, as printed on the unit. The layout of a real reply, with a
+#: made-up serial in place of the real one.
+SERIAL = payload("30 30 30 30 31 31 31 31 32 32 32 32 33 33 33 33 00 00")
 
 
 def running_with_target_bytes(high: int, low: int) -> bytes:

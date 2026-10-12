@@ -264,7 +264,7 @@ async def test_identify_bonds_before_subscribing(hass: HomeAssistant, connect: A
     valve = FakeValve(replies())
     connect.return_value = valve
     info = await MiraClient(hass, ADDRESS).identify(pair=True)
-    assert (info.name, info.serial, info.state.running) == ("Bathroom", "3140090125121946", False)
+    assert (info.name, info.serial, info.state.running) == ("Bathroom", "0000111122223333", False)
     assert valve.log[:2] == ["pair", "notify"]
     assert valve.log[-1] == "disconnect"
 
