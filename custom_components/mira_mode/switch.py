@@ -43,7 +43,7 @@ class MiraOutletSwitch(MiraEntity, SwitchEntity):
     def __init__(self, coordinator: MiraCoordinator, number: int, label: str) -> None:
         super().__init__(coordinator, f"outlet_{number}")
         self._bit = outlet_bit(number)
-        self._attr_name = label
+        self._attr_translation_placeholders = {"outlet": label}
 
     @property
     def is_on(self) -> bool:

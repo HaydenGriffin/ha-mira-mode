@@ -84,7 +84,7 @@
       "default_flow": { "name": "{outlet} default flow" }
     },
     "switch": {
-      "outlet": { "name": "Outlet" }
+      "outlet": { "name": "{outlet}" }
     }
   },
   "exceptions": {

@@ -327,6 +327,21 @@ async def test_options_hide_an_outlet(
     assert hass.states.get(SWITCH_1).attributes["friendly_name"] == "Mira Demo Shower"
 
 
+async def test_an_outlet_labelled_later_takes_its_id_from_the_label(
+    hass: HomeAssistant, config_entry: MockConfigEntry, valve: AsyncMock
+) -> None:
+    await _setup(hass, config_entry)
+    hass.config_entries.async_update_entry(
+        config_entry, options={**config_entry.options, "outlet_3": "Bath fill"}
+    )
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+    state = hass.states.get("switch.mira_demo_bath_fill")
+    assert state is not None
+    assert state.attributes["friendly_name"] == "Mira Demo Bath fill"
+    assert hass.states.get("sensor.mira_demo_bath_fill_max_temperature") is not None
+
+
 async def test_unload(hass: HomeAssistant, config_entry: MockConfigEntry, valve: AsyncMock) -> None:
     await _setup(hass, config_entry)
     assert await hass.config_entries.async_unload(config_entry.entry_id)
