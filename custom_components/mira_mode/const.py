@@ -22,6 +22,8 @@ DEFAULT_OUTLET_LABELS: Final = {
 IDLE_INTERVAL: Final = timedelta(seconds=60)
 #: Running: stay connected and read every 10 seconds.
 RUNNING_INTERVAL: Final = timedelta(seconds=10)
+#: Inlet temperatures older than this are treated as unknown.
+INLETS_MAX_AGE: Final = timedelta(minutes=10)
 #: Outlet settings only change from the Mira app, so they are read less often.
 SETTINGS_INTERVAL: Final = timedelta(minutes=30)
 

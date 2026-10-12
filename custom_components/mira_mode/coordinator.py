@@ -22,6 +22,7 @@ from .const import (
     DOMAIN,
     EVENT_USAGE,
     IDLE_INTERVAL,
+    INLETS_MAX_AGE,
     KWH_PER_LITRE_KELVIN,
     MAX_TEMPERATURE,
     MIN_FLOW,
@@ -71,7 +72,8 @@ class MiraCoordinator(DataUpdateCoordinator[State]):
     treats "last one wins".
 
     The extra reads (inlets, last usage, outlet settings) live alongside the
-    state and keep their last value when the valve doesn't answer them.
+    state and keep their last value when the valve doesn't answer them,
+    except the inlet temperatures, which expire.
     """
 
     config_entry: MiraConfigEntry
@@ -87,13 +89,21 @@ class MiraCoordinator(DataUpdateCoordinator[State]):
         self.client = client
         self.temperature = DEFAULT_TEMPERATURE
         self.flow = DEFAULT_FLOW
-        self.inlets: Inlets | None = None
+        self._inlets: Inlets | None = None
+        self._inlets_at = dt_util.utcnow()
         self.last_usage: Usage | None = None
         self.outlet_settings: dict[int, OutletSettings] = {}
         #: Goes up by one for each finished run; totals add ``last_run`` when it moves.
         self.runs_counted = 0
         self.last_run: CountedRun | None = None
         self._settings_due: datetime | None = None
+
+    @property
+    def inlets(self) -> Inlets | None:
+        """The last inlet temperatures, unless they are too old to stand for now."""
+        if self._inlets is None or dt_util.utcnow() - self._inlets_at > INLETS_MAX_AGE:
+            return None
+        return self._inlets
 
     async def _async_update_data(self) -> State:
         outlets = self._outlets_due()
@@ -164,7 +174,8 @@ class MiraCoordinator(DataUpdateCoordinator[State]):
         return list(outlet_labels(self.config_entry))
 
     def _remember(self, reading: Reading) -> None:
-        self.inlets = reading.inlets or self.inlets
+        if reading.inlets is not None:
+            self._inlets, self._inlets_at = reading.inlets, dt_util.utcnow()
         self.outlet_settings.update(reading.outlet_settings)
         usage = reading.last_usage
         if usage is None or reading.state.running:

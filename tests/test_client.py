@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 import pytest
 
 from custom_components.mira_mode.client import (
+    MAX_SKIPPED_POLLS,
     CommandRejected,
     MiraClient,
     PairingFailed,
@@ -143,7 +144,7 @@ async def test_outlet_settings_are_read_when_asked(hass: HomeAssistant, connect:
     assert reading.outlet_settings[2].max_duration == 900
 
 
-async def test_an_ignored_extra_read_is_not_asked_again(
+async def test_an_unanswered_read_backs_off_then_recovers(
     hass: HomeAssistant, connect: AsyncMock
 ) -> None:
     valve = FakeValve(
@@ -154,15 +155,35 @@ async def test_an_ignored_extra_read_is_not_asked_again(
     )
     connect.return_value = valve
     client = MiraClient(hass, ADDRESS)
+    asked: list[int] = []
     with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.01):
-        first = await client.read()
-    assert first.inlets is None and first.last_usage is None
-    assert client.unanswered == {(OP_GET_INLETS, b"\x03\x00")}
+        for poll in range(1, 12):
+            valve.log.clear()
+            reading = await client.read()
+            if OP_GET_INLETS in valve.log:
+                asked.append(poll)
+                # Abandoned with the dropped link; asked on its own next time.
+                assert reading.last_usage is None
+    # Skipped for 1, 2, then 4 polls after each miss.
+    assert asked == [1, 3, 6, 11]
 
-    valve.log.clear()
-    second = await client.read()
-    assert valve.log == ["notify", OP_GET_STATE, OP_GET_USAGE, "disconnect"]
-    assert second.last_usage is not None
+    # Once the valve answers again, it is asked every poll.
+    valve.replies[OP_GET_INLETS] = captures.frame(captures.INLETS)
+    readings = [await client.read() for _ in range(9)]
+    assert [r.inlets is not None for r in readings] == [False] * 8 + [True]
+    assert client.backoff == {}
+    assert (await client.read()).inlets is not None
+
+
+async def test_backoff_is_bounded(hass: HomeAssistant, connect: AsyncMock) -> None:
+    connect.return_value = FakeValve({OP_GET_STATE: captures.frame(captures.STATE_IDLE)})
+    client = MiraClient(hass, ADDRESS)
+    with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.01):
+        for _ in range(400):
+            await client.read()
+    key = (OP_GET_INLETS, b"\x03\x00")
+    assert client.backoff[key].misses > 6
+    assert client.backoff[key].skip <= MAX_SKIPPED_POLLS
 
 
 async def test_running_read_keeps_the_connection(hass: HomeAssistant, connect: AsyncMock) -> None:

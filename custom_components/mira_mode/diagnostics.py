@@ -52,10 +52,10 @@ async def async_get_config_entry_diagnostics(
             str(number): asdict(settings)
             for number, settings in coordinator.outlet_settings.items()
         },
-        "unanswered_reads": sorted(
-            f"{opcode:02x} {payload.hex(' ')}".strip()
-            for opcode, payload in coordinator.client.unanswered
-        ),
+        "unanswered_reads": {
+            f"{opcode:02x} {payload.hex(' ')}".strip(): asdict(backoff)
+            for (opcode, payload), backoff in coordinator.client.backoff.items()
+        },
         "advertisement": None
         if advert is None
         else {

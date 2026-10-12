@@ -15,7 +15,7 @@ from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
 )
 
-from custom_components.mira_mode.client import Reading
+from custom_components.mira_mode.client import Backoff, Reading
 from custom_components.mira_mode.coordinator import heating_energy
 from custom_components.mira_mode.protocol import (
     Usage,
@@ -268,9 +268,31 @@ async def test_diagnostics_include_the_extra_reads(
 
     valve.read.return_value = reading()
     await _setup(hass, config_entry)
-    config_entry.runtime_data.client.unanswered.add((0x5B, b"\x03\x00"))
+    config_entry.runtime_data.client.backoff[(0x5B, b"\x03\x00")] = Backoff(misses=2, skip=1)
     result = await async_get_config_entry_diagnostics(hass, config_entry)
     assert result["inlets"]["raw"] == captures.INLETS.hex(" ")
     assert result["last_usage"] == {"seconds": 10, "litres": 1, "temperature": 44.0}
     assert result["outlet_settings"]["1"]["max_duration"] == 1800
-    assert result["unanswered_reads"] == ["5b 03 00"]
+    assert result["unanswered_reads"] == {"5b 03 00": {"misses": 2, "skip": 1}}
+
+
+async def test_energy_is_not_estimated_from_a_stale_inlet(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    valve: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    events: list[dict[str, object]] = []
+    hass.bus.async_listen("mira_mode_usage", callback(lambda e: events.append(dict(e.data))))
+    valve.read.return_value = reading()
+    await _setup(hass, config_entry)
+    valve.read.return_value = reading(inlets=None)
+    for _ in range(11):
+        await _poll(hass, freezer, 60)
+    assert _state(hass, "sensor.mira_demo_cold_inlet_temperature") == "unknown"
+
+    valve.read.return_value = reading(inlets=None, last_usage=NEXT_USAGE)
+    await _poll(hass, freezer, 60)
+    assert _state(hass, WATER_USED) == "120.0"
+    assert _state(hass, ENERGY) == "0.0"
+    assert events[0]["energy_kwh"] is None

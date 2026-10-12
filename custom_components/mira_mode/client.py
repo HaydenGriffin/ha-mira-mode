@@ -54,6 +54,9 @@ from .protocol import (
 
 _LOGGER = logging.getLogger(__name__)
 
+#: An unanswered extra read is skipped for 1, 2, 4... polls, up to this many.
+MAX_SKIPPED_POLLS = 32
+
 
 class MiraError(Exception):
     """Base class for valve errors."""
@@ -84,6 +87,14 @@ class ValveInfo:
     state: State
 
 
+@dataclass
+class Backoff:
+    """How often an extra read has gone unanswered in a row, and polls left to skip."""
+
+    misses: int
+    skip: int
+
+
 @dataclass(frozen=True)
 class Reading:
     """One poll: the state, plus each extra read the valve answered (else None)."""
@@ -105,8 +116,8 @@ class MiraClient:
         self._reader = FrameReader()
         self._pending: asyncio.Future[Frame] | None = None
         self._lock = asyncio.Lock()
-        #: Extra reads the valve ignored, as (opcode, payload).
-        self.unanswered: set[tuple[int, bytes]] = set()
+        #: Extra reads the valve didn't answer last time, by (opcode, payload).
+        self.backoff: dict[tuple[int, bytes], Backoff] = {}
 
     @property
     def connected(self) -> bool:
@@ -208,20 +219,33 @@ class MiraClient:
     async def _ask[T](
         self, opcode: int, payload: bytes, decode: Callable[[bytes], T | None]
     ) -> T | None:
-        """Make an extra read; None if the valve ignores it or the reply doesn't decode.
+        """Make an extra read; None if it is skipped, unanswered or doesn't decode.
 
-        Not every valve may answer every read, and each unanswered one holds
-        the connection for the full timeout, so one that goes unanswered is
-        not asked again until the integration reloads.
+        Not every valve may answer every read, and each unanswered one costs
+        the full timeout and the connection, so it is skipped for a number of
+        polls that doubles with each miss in a row, then asked again.
         """
-        if (opcode, payload) in self.unanswered or not self.connected:
+        key = (opcode, payload)
+        backoff = self.backoff.get(key)
+        if backoff is not None and backoff.skip:
+            backoff.skip -= 1
+            return None
+        if not self.connected:
             return None
         try:
             frame = await self._request(opcode, payload)
         except TimeoutError:
-            _LOGGER.debug("%s: no reply to opcode 0x%02X; not asking again", self.address, opcode)
-            self.unanswered.add((opcode, payload))
+            misses = backoff.misses + 1 if backoff else 1
+            skip = min(2 ** (misses - 1), MAX_SKIPPED_POLLS)
+            self.backoff[key] = Backoff(misses, skip)
+            _LOGGER.debug(
+                "%s: no reply to opcode 0x%02X; skipping it for %d polls",
+                self.address,
+                opcode,
+                skip,
+            )
             return None
+        self.backoff.pop(key, None)
         return decode(frame.payload)
 
     async def _read_state_unlocked(self) -> State:

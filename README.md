@@ -359,9 +359,14 @@ a notification.
   also reads each labelled outlet's settings.
 - **Running:** the connection stays open and the same reads happen every
   10 seconds. While the shower runs, the Mira app can't connect.
-- **Unanswered reads:** if the valve ignores one of the extra reads, it isn't
-  asked again until the integration reloads, so it can't slow every poll
-  down. The diagnostics download lists any that were dropped.
+- **Unanswered reads:** replies carry no reference to the request, so if
+  any read times out the connection is dropped and the rest of that poll's
+  reads are skipped (a late reply could otherwise be mistaken for the next
+  answer). An extra read the valve doesn't answer is then skipped for 1, 2,
+  4... polls (at most 32) before it is tried again, so it can't slow every
+  poll down. The diagnostics download lists any that are backing off.
+- **Inlet temperatures expire** after 10 minutes without a fresh reading,
+  so heating energy is never estimated from an old cold inlet value.
 - **Commands:** each `SET_OUTLETS` command names the complete set of running
   outlets, with the temperature in tenths of a degree and the flow as a
   percentage. The valve must acknowledge it, and a state read straight
