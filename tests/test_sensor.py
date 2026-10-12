@@ -16,7 +16,7 @@ from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
 )
 
-from custom_components.mira_mode.client import Backoff, Reading
+from custom_components.mira_mode.client import Backoff, Reading, ValveUnreachable
 from custom_components.mira_mode.coordinator import heating_energy
 from custom_components.mira_mode.protocol import (
     Usage,
@@ -323,3 +323,72 @@ async def test_diagnostics_hide_names_people_chose(
     assert result["advertisement"]["name"] == "**REDACTED**"
     assert result["advertisement"]["manufacturer_data"] == {"2578": "7 bytes"}
     assert result["advertisement"]["service_uuids"] == advert.service_uuids
+
+
+async def test_a_failed_poll_after_a_counted_run_does_not_count_it_again(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    valve: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    events: list[dict[str, object]] = []
+    hass.bus.async_listen("mira_mode_usage", callback(lambda e: events.append(dict(e.data))))
+    valve.read.return_value = reading()
+    await _setup(hass, config_entry)
+    valve.read.return_value = reading(last_usage=NEXT_USAGE)
+    await _poll(hass, freezer, 60)
+    assert _state(hass, WATER_USED) == "120.0"
+
+    valve.read.side_effect = ValveUnreachable("timeout")
+    await _poll(hass, freezer, 60)
+    assert _state(hass, WATER_USED) == "unavailable"
+
+    valve.read.side_effect = None
+    await _poll(hass, freezer, 60)
+    assert _state(hass, WATER_USED) == "120.0"
+    assert len(events) == 1
+
+
+async def test_totals_survive_a_reload(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    valve: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    valve.read.return_value = reading()
+    await _setup(hass, config_entry)
+    valve.read.return_value = reading(last_usage=NEXT_USAGE)
+    await _poll(hass, freezer, 60)
+    energy = _state(hass, ENERGY)
+    assert float(energy) > 0
+
+    # Unloading stores the totals; setting up again restores them, and the
+    # record already counted is only a baseline for the new coordinator.
+    await hass.config_entries.async_reload(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert _state(hass, WATER_USED) == "120.0"
+    assert _state(hass, ENERGY) == energy
+
+    valve.read.return_value = reading(last_usage=Usage(seconds=60, litres=8, temperature=40.0))
+    await _poll(hass, freezer, 60)
+    assert _state(hass, WATER_USED) == "128.0"
+    assert float(_state(hass, ENERGY)) > float(energy)
+
+
+async def test_totals_start_from_zero_without_usable_restore_data(
+    hass: HomeAssistant, config_entry: MockConfigEntry, valve: AsyncMock
+) -> None:
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            # A state but no extra data, as left by an older version.
+            (HaState(WATER_USED, "42"), {}),
+            (
+                HaState(ENERGY, "unknown"),
+                {"native_value": None, "native_unit_of_measurement": None},
+            ),
+        ],
+    )
+    await _setup(hass, config_entry)
+    assert _state(hass, WATER_USED) == "0.0"
+    assert _state(hass, ENERGY) == "0.0"
