@@ -23,6 +23,11 @@ def test_checksum_makes_a_frame_sum_to_zero() -> None:
         (p.OP_SET_OUTLETS, b"\x00\x00\x00\x00", "aa5500ab040000000052"),  # stop, keep temp
         (0xB1, b"\x02", "aa5500b101024d"),  # run preset 2
         (p.OP_GET_STATE, b"\x02", "aa55002b0102d3"),  # read state
+        # Sent by the Mira app (this integration's own capture).
+        (p.OP_GET_INLETS, p.INLETS_REQUEST, "aa55005b020300a1"),
+        (p.OP_GET_USAGE, p.LAST_USAGE_REQUEST, "aa55005c020200a1"),
+        (p.OP_GET_OUTLET_SETTINGS, p.outlet_settings_request(1), "aa55001b0100e5"),
+        (p.OP_GET_OUTLET_SETTINGS, p.outlet_settings_request(2), "aa55001b0101e4"),
     ],
 )
 def test_encodes_frames_the_valve_accepted(opcode: int, payload: bytes, expected: str) -> None:
@@ -160,6 +165,65 @@ class TestState:
 
     def test_rejects_a_short_reply(self) -> None:
         assert p.decode_state(captures.STATE_IDLE[:8]) is None
+
+    def test_live_flow_ramps_after_a_start(self) -> None:
+        state = p.decode_state(captures.STATE_RAMPING)
+        assert state is not None
+        assert (state.flow, state.live_flow, state.flow_rate) == (48, 30, 7.5)
+
+    def test_no_flow_rate_while_idle(self) -> None:
+        state = p.decode_state(captures.STATE_IDLE)
+        assert state is not None
+        assert state.flow_rate == 0.0
+
+    def test_live_flow_needs_the_long_reply(self) -> None:
+        state = p.decode_state(captures.STATE_RAMPING[: p.STATE_SIZE])
+        assert state is not None
+        assert state.live_flow == 0
+
+
+class TestInlets:
+    def test_decodes_the_capture(self) -> None:
+        inlets = p.decode_inlets(captures.INLETS)
+        assert inlets is not None
+        assert inlets.cold == 20.4
+        assert inlets.hot == 36.1  # unproven: see decode_inlets
+        assert inlets.raw == captures.INLETS
+
+    def test_rejects_a_short_reply(self) -> None:
+        assert p.decode_inlets(captures.INLETS[:20]) is None
+
+
+class TestLastUsage:
+    def test_matches_the_app(self) -> None:
+        usage = p.decode_last_usage(captures.LAST_USAGE)
+        assert usage == p.Usage(seconds=10, litres=1, temperature=44.0)
+
+    @pytest.mark.parametrize("raw", [captures.USAGE_PAGE, captures.LAST_USAGE[:5], b""])
+    def test_rejects_other_replies(self, raw: bytes) -> None:
+        assert p.decode_last_usage(raw) is None
+
+
+class TestOutletSettings:
+    def test_decodes_the_capture(self) -> None:
+        settings = p.decode_outlet_settings(captures.OUTLET_SETTINGS)
+        assert settings == p.OutletSettings(
+            max_temperature=45.0, default_flow=48, max_duration=1800
+        )
+        assert p.litres_per_minute(settings.default_flow) == 12.0
+
+    def test_follows_changes_made_in_the_app(self) -> None:
+        settings = p.decode_outlet_settings(captures.OUTLET_SETTINGS_CHANGED)
+        assert settings == p.OutletSettings(max_temperature=46.0, default_flow=56, max_duration=900)
+        assert p.litres_per_minute(settings.default_flow) == 14.0
+
+    def test_rejects_a_short_reply(self) -> None:
+        assert p.decode_outlet_settings(captures.OUTLET_SETTINGS[:10]) is None
+
+    @pytest.mark.parametrize("number", [0, 4])
+    def test_request_rejects_unknown_outlets(self, number: int) -> None:
+        with pytest.raises(ValueError):
+            p.outlet_settings_request(number)
 
 
 @pytest.mark.parametrize("number", [0, 4])

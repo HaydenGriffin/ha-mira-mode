@@ -5,27 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.const import CONF_ADDRESS, Platform
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import CONF_OUTLET_LABELS, DEFAULT_OUTLET_LABELS, DOMAIN
-from .coordinator import MiraConfigEntry, MiraCoordinator
-from .entity import MiraEntity
+from .coordinator import MiraConfigEntry, MiraCoordinator, outlet_labels
+from .entity import MiraEntity, remove_unlabelled_outlets
 from .protocol import outlet_bit
 
 PARALLEL_UPDATES = 1
-
-
-def outlet_labels(entry: MiraConfigEntry) -> dict[int, str]:
-    """Outlet number to label, for every outlet given a label in the options."""
-    labels: dict[int, str] = {}
-    for number, key in enumerate(CONF_OUTLET_LABELS, start=1):
-        label = str(entry.options.get(key, DEFAULT_OUTLET_LABELS[key])).strip()
-        if label:
-            labels[number] = label
-    return labels
 
 
 async def async_setup_entry(
@@ -36,20 +24,10 @@ async def async_setup_entry(
     """Add a switch for each labelled outlet and forget unlabelled ones."""
     coordinator = entry.runtime_data
     labels = outlet_labels(entry)
-    _remove_unlabelled(hass, entry, labels)
+    remove_unlabelled_outlets(hass, entry, Platform.SWITCH, labels, ["outlet_{number}"])
     async_add_entities(
         MiraOutletSwitch(coordinator, number, label) for number, label in labels.items()
     )
-
-
-def _remove_unlabelled(hass: HomeAssistant, entry: MiraConfigEntry, labels: dict[int, str]) -> None:
-    registry = er.async_get(hass)
-    for number in range(1, len(CONF_OUTLET_LABELS) + 1):
-        if number in labels:
-            continue
-        unique_id = MiraOutletSwitch.unique_id_for(entry, number)
-        if entity_id := registry.async_get_entity_id(Platform.SWITCH, DOMAIN, unique_id):
-            registry.async_remove(entity_id)
 
 
 class MiraOutletSwitch(MiraEntity, SwitchEntity):
@@ -66,11 +44,6 @@ class MiraOutletSwitch(MiraEntity, SwitchEntity):
         super().__init__(coordinator, f"outlet_{number}")
         self._bit = outlet_bit(number)
         self._attr_name = label
-
-    @staticmethod
-    def unique_id_for(entry: MiraConfigEntry, number: int) -> str:
-        """Return the unique id of outlet ``number``'s switch (matches MiraEntity)."""
-        return f"{entry.data[CONF_ADDRESS]}_outlet_{number}"
 
     @property
     def is_on(self) -> bool:

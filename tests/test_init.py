@@ -14,7 +14,12 @@ from homeassistant.helpers import device_registry as dr, entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
-from custom_components.mira_mode.client import CommandRejected, ValveNotFound, ValveUnreachable
+from custom_components.mira_mode.client import (
+    CommandRejected,
+    Reading,
+    ValveNotFound,
+    ValveUnreachable,
+)
 from custom_components.mira_mode.const import DOMAIN
 from custom_components.mira_mode.protocol import State
 
@@ -53,7 +58,21 @@ async def test_setup_creates_the_device_and_entities(
         "button.mira_demo_stop",
         FLOW,
         TEMPERATURE,
+        "sensor.mira_demo_cold_inlet_temperature",
+        "sensor.mira_demo_flow_rate",
+        "sensor.mira_demo_hot_inlet_temperature",
+        "sensor.mira_demo_last_run_duration",
+        "sensor.mira_demo_last_run_temperature",
+        "sensor.mira_demo_last_run_water_used",
+        "sensor.mira_demo_outlet_1_default_flow",
+        "sensor.mira_demo_outlet_1_max_duration",
+        "sensor.mira_demo_outlet_1_max_temperature",
+        "sensor.mira_demo_outlet_2_default_flow",
+        "sensor.mira_demo_outlet_2_max_duration",
+        "sensor.mira_demo_outlet_2_max_temperature",
+        "sensor.mira_demo_water_heating_energy",
         "sensor.mira_demo_water_temperature",
+        "sensor.mira_demo_water_used",
         SWITCH_1,
         SWITCH_2,
     ]
@@ -67,7 +86,7 @@ async def test_setup_creates_the_device_and_entities(
 async def test_setup_retries_while_the_valve_is_out_of_reach(
     hass: HomeAssistant, config_entry: MockConfigEntry, valve: AsyncMock
 ) -> None:
-    valve.read_state.side_effect = ValveNotFound(ADDRESS)
+    valve.read.side_effect = ValveNotFound(ADDRESS)
     await hass.config_entries.async_setup(config_entry.entry_id)
     assert config_entry.state is ConfigEntryState.SETUP_RETRY
 
@@ -79,7 +98,7 @@ async def test_running_valve_is_polled_faster_and_followed(
     freezer: FrozenDateTimeFactory,
 ) -> None:
     await _setup(hass, config_entry)
-    valve.read_state.return_value = RUNNING  # started on the dial: 42.0 C, flow 50
+    valve.read.return_value = Reading(RUNNING)  # started on the dial: 42.0 C, flow 50
 
     freezer.tick(timedelta(seconds=60))
     async_fire_time_changed(hass)
@@ -90,11 +109,11 @@ async def test_running_valve_is_polled_faster_and_followed(
     assert hass.states.get(TEMPERATURE).state == "42.0"
     assert hass.states.get(FLOW).state == "50"
 
-    calls = valve.read_state.await_count
+    calls = valve.read.await_count
     freezer.tick(timedelta(seconds=10))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert valve.read_state.await_count == calls + 1
+    assert valve.read.await_count == calls + 1
 
 
 async def test_poll_failure_marks_entities_unavailable_but_keeps_controls(
@@ -104,7 +123,7 @@ async def test_poll_failure_marks_entities_unavailable_but_keeps_controls(
     freezer: FrozenDateTimeFactory,
 ) -> None:
     await _setup(hass, config_entry)
-    valve.read_state.side_effect = ValveUnreachable("timeout")
+    valve.read.side_effect = ValveUnreachable("timeout")
     freezer.tick(timedelta(seconds=60))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()

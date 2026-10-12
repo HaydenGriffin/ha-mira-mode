@@ -8,3 +8,5 @@ venv/
 .coverage
 htmlcov/
 .DS_Store
+# Raw Bluetooth captures identify the valve they came from.
+docs/captures/

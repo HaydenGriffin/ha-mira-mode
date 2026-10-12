@@ -53,3 +53,31 @@ def running_with_target_bytes(high: int, low: int) -> bytes:
     raw = bytearray(STATE_RUNNING)
     raw[10], raw[11] = high, low
     return bytes(raw)
+
+
+# The replies below were recorded by this integration's author from the Mira
+# app talking to a current-generation dual-outlet valve. Values were checked
+# against what the app showed at the time.
+
+#: Outlet 1 just after a start: flow 48 commanded (byte 12), 30 reached so far
+#: (byte 16), i.e. 7.5 L/min.
+STATE_RAMPING = payload("21 c0 00 00 00 1e 00 00 00 00 01 c2 30 01 00 fd 1e 01")
+
+#: Opcode 0x5B, idle. Bytes 1-2 (31.7) follow the water temperature, bytes 3-4
+#: read 36.1 (the hot inlet guess) and bytes 26-27 are the cold inlet, 20.4 C.
+INLETS = payload(
+    "00 01 3d 01 69 ff ff 00 00 00 00 01 cc 30 00 03 01 00 04 99 00 00 03 0a 00 00 00 cc 00 00 0f"
+)
+
+#: Opcode 0x5C 02 00, while the app's last usage screen showed 10 s, 1 litre
+#: and 44 C.
+LAST_USAGE = payload("02 00 0a 00 01 58")
+
+#: Opcode 0x5C 02 00 01: a different usage page, not decoded.
+USAGE_PAGE = payload("00 01 01 00 08 00 57 55 83 ff")
+
+#: Opcode 0x1B for outlet 1: 45.0 C maximum, flow 48 (12 L/min), 1800 s.
+OUTLET_SETTINGS = payload("00 01 01 01 c2 01 2c 01 7c 40 10 30 07 08 00 00")
+
+#: The same after setting 46.0 C, 14 L/min and 15 minutes in the app.
+OUTLET_SETTINGS_CHANGED = payload("00 01 01 01 cc 01 2c 01 7c 58 10 38 03 84 00 00")

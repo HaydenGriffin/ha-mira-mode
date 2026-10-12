@@ -1,7 +1,8 @@
-"""Diagnostics download: settings, last decoded state and the raw reply."""
+"""Diagnostics download: settings, last decoded readings and the raw replies."""
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from homeassistant.components.bluetooth import async_last_service_info
@@ -39,6 +40,22 @@ async def async_get_config_entry_diagnostics(
             "flow": state.flow,
             "raw": state.raw.hex(" "),
         },
+        "inlets": None
+        if coordinator.inlets is None
+        else {
+            "hot": coordinator.inlets.hot,
+            "cold": coordinator.inlets.cold,
+            "raw": coordinator.inlets.raw.hex(" "),
+        },
+        "last_usage": None if coordinator.last_usage is None else asdict(coordinator.last_usage),
+        "outlet_settings": {
+            str(number): asdict(settings)
+            for number, settings in coordinator.outlet_settings.items()
+        },
+        "unanswered_reads": sorted(
+            f"{opcode:02x} {payload.hex(' ')}".strip()
+            for opcode, payload in coordinator.client.unanswered
+        ),
         "advertisement": None
         if advert is None
         else {

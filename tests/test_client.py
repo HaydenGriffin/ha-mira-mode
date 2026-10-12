@@ -20,10 +20,14 @@ from custom_components.mira_mode.client import (
     ValveUnreachable,
 )
 from custom_components.mira_mode.protocol import (
+    OP_GET_INLETS,
     OP_GET_NAME,
+    OP_GET_OUTLET_SETTINGS,
     OP_GET_SERIAL,
     OP_GET_STATE,
+    OP_GET_USAGE,
     OP_SET_OUTLETS,
+    Usage,
     decode_frame,
 )
 
@@ -79,6 +83,9 @@ def replies(state: bytes = captures.STATE_IDLE, ack: bytes = captures.ACK) -> di
         OP_SET_OUTLETS: ack,
         OP_GET_NAME: captures.frame(captures.NAME),
         OP_GET_SERIAL: captures.frame(captures.SERIAL),
+        OP_GET_INLETS: captures.frame(captures.INLETS),
+        OP_GET_USAGE: captures.frame(captures.LAST_USAGE),
+        OP_GET_OUTLET_SETTINGS: captures.frame(captures.OUTLET_SETTINGS),
     }
 
 
@@ -97,18 +104,58 @@ def connect() -> Generator[AsyncMock]:
 async def test_idle_read_disconnects_afterwards(hass: HomeAssistant, connect: AsyncMock) -> None:
     valve = FakeValve(replies())
     connect.return_value = valve
-    state = await MiraClient(hass, ADDRESS).read_state()
-    assert not state.running
-    assert valve.log == ["notify", OP_GET_STATE, "disconnect"]
-    assert valve.written == [bytes.fromhex("aa55002b0102d3")]
+    reading = await MiraClient(hass, ADDRESS).read()
+    assert not reading.state.running
+    assert valve.log == ["notify", OP_GET_STATE, OP_GET_INLETS, OP_GET_USAGE, "disconnect"]
+    # The extra reads are the frames the Mira app sends.
+    assert valve.written == [
+        bytes.fromhex("aa55002b0102d3"),
+        bytes.fromhex("aa55005b020300a1"),
+        bytes.fromhex("aa55005c020200a1"),
+    ]
+    assert reading.inlets is not None and reading.inlets.cold == 20.4
+    assert reading.last_usage == Usage(seconds=10, litres=1, temperature=44.0)
+    assert reading.outlet_settings == {}
+
+
+async def test_outlet_settings_are_read_when_asked(hass: HomeAssistant, connect: AsyncMock) -> None:
+    valve = FakeValve(replies())
+    connect.return_value = valve
+    reading = await MiraClient(hass, ADDRESS).read([1, 2])
+    assert valve.written[-2:] == [bytes.fromhex("aa55001b0100e5"), bytes.fromhex("aa55001b0101e4")]
+    assert valve.log[-1] == "disconnect"
+    assert set(reading.outlet_settings) == {1, 2}
+    assert reading.outlet_settings[1].max_temperature == 45.0
+
+
+async def test_an_ignored_extra_read_is_not_asked_again(
+    hass: HomeAssistant, connect: AsyncMock
+) -> None:
+    valve = FakeValve(
+        {
+            OP_GET_STATE: captures.frame(captures.STATE_IDLE),
+            OP_GET_USAGE: captures.frame(captures.LAST_USAGE),
+        }
+    )
+    connect.return_value = valve
+    client = MiraClient(hass, ADDRESS)
+    with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.01):
+        first = await client.read()
+    assert first.inlets is None and first.last_usage is not None
+    assert client.unanswered == {(OP_GET_INLETS, b"\x03\x00")}
+
+    valve.log.clear()
+    second = await client.read()
+    assert valve.log == ["notify", OP_GET_STATE, OP_GET_USAGE, "disconnect"]
+    assert second.last_usage == first.last_usage
 
 
 async def test_running_read_keeps_the_connection(hass: HomeAssistant, connect: AsyncMock) -> None:
     valve = FakeValve(replies(captures.STATE_RUNNING))
     connect.return_value = valve
     client = MiraClient(hass, ADDRESS)
-    await client.read_state()
-    await client.read_state()
+    await client.read()
+    await client.read()
     assert client.connected
     assert connect.await_count == 1
     assert "disconnect" not in valve.log
@@ -116,8 +163,9 @@ async def test_running_read_keeps_the_connection(hass: HomeAssistant, connect: A
 
 async def test_fragmented_replies_are_reassembled(hass: HomeAssistant, connect: AsyncMock) -> None:
     connect.return_value = FakeValve(replies(captures.STATE_RUNNING), chunk=3)
-    state = await MiraClient(hass, ADDRESS).read_state()
-    assert state.target_temperature == 42.0
+    reading = await MiraClient(hass, ADDRESS).read()
+    assert reading.state.target_temperature == 42.0
+    assert reading.inlets is not None and reading.inlets.raw == captures.INLETS
 
 
 async def test_set_outlets_sends_the_frame_and_reads_back(
@@ -161,7 +209,7 @@ async def test_silence_is_a_failure(hass: HomeAssistant, connect: AsyncMock) -> 
 async def test_connect_failure(hass: HomeAssistant, connect: AsyncMock) -> None:
     connect.side_effect = BleakError("GATT error 133")
     with pytest.raises(ValveUnreachable, match="133"):
-        await MiraClient(hass, ADDRESS).read_state()
+        await MiraClient(hass, ADDRESS).read()
 
 
 async def test_out_of_range(hass: HomeAssistant, connect: AsyncMock) -> None:
@@ -172,7 +220,7 @@ async def test_out_of_range(hass: HomeAssistant, connect: AsyncMock) -> None:
         ),
         pytest.raises(ValveNotFound),
     ):
-        await MiraClient(hass, ADDRESS).read_state()
+        await MiraClient(hass, ADDRESS).read()
     connect.assert_not_awaited()
 
 
@@ -216,7 +264,7 @@ async def test_disconnect_while_waiting_fails_fast(hass: HomeAssistant, connect:
     valve = FakeValve({})
     connect.return_value = valve
     client = MiraClient(hass, ADDRESS)
-    task = asyncio.create_task(client.read_state())
+    task = asyncio.create_task(client.read())
     while OP_GET_STATE not in valve.log:
         await asyncio.sleep(0)
     on_disconnect = connect.call_args.kwargs["disconnected_callback"]

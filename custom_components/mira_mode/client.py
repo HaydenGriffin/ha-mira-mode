@@ -9,8 +9,8 @@ notifications are requested, which shapes everything below.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from dataclasses import dataclass, field
 import logging
 
 from bleak.backends.device import BLEDevice
@@ -23,20 +23,32 @@ from .const import RESPONSE_TIMEOUT
 from .protocol import (
     COMMAND_CHAR_UUID,
     EVENT_CHAR_UUID,
+    INLETS_REQUEST,
+    LAST_USAGE_REQUEST,
+    OP_GET_INLETS,
     OP_GET_NAME,
+    OP_GET_OUTLET_SETTINGS,
     OP_GET_SERIAL,
     OP_GET_STATE,
+    OP_GET_USAGE,
     OP_SET_OUTLETS,
     SERIAL_REQUEST,
     STATE_REQUEST,
     Frame,
     FrameReader,
+    Inlets,
+    OutletSettings,
     State,
+    Usage,
+    decode_inlets,
+    decode_last_usage,
+    decode_outlet_settings,
     decode_state,
     decode_text,
     encode_frame,
     encode_outlets,
     is_ack_ok,
+    outlet_settings_request,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,6 +83,17 @@ class ValveInfo:
     state: State
 
 
+@dataclass(frozen=True)
+class Reading:
+    """One poll: the state, plus each extra read the valve answered (else None)."""
+
+    state: State
+    inlets: Inlets | None = None
+    last_usage: Usage | None = None
+    #: Outlet number to its settings, for the outlets asked about.
+    outlet_settings: Mapping[int, OutletSettings] = field(default_factory=dict)
+
+
 class MiraClient:
     """Talks to one valve; serialises access and owns the connection."""
 
@@ -81,24 +104,40 @@ class MiraClient:
         self._reader = FrameReader()
         self._pending: asyncio.Future[Frame] | None = None
         self._lock = asyncio.Lock()
+        #: Extra reads the valve ignored, as (opcode, payload).
+        self.unanswered: set[tuple[int, bytes]] = set()
 
     @property
     def connected(self) -> bool:
         """Whether a connection is currently held open."""
         return self._client is not None and self._client.is_connected
 
-    async def read_state(self) -> State:
-        """Read the valve's state.
+    async def read(self, outlets: Iterable[int] = ()) -> Reading:
+        """Read the state, the inlet temperatures and the last usage.
 
-        The connection is kept open while the valve is running (it is read
-        often then) and dropped otherwise, so the valve stays free for other
-        clients such as the phone app.
+        Also reads the settings of each outlet number in ``outlets``. All of
+        it happens on one connection, which is kept open while the valve is
+        running (it is read often then) and dropped otherwise, so the valve
+        stays free for other clients such as the phone app.
         """
+
+        async def run() -> Reading:
+            state = await self._read_state_unlocked()
+            inlets = await self._ask(OP_GET_INLETS, INLETS_REQUEST, decode_inlets)
+            usage = await self._ask(OP_GET_USAGE, LAST_USAGE_REQUEST, decode_last_usage)
+            settings: dict[int, OutletSettings] = {}
+            for number in outlets:
+                request = outlet_settings_request(number)
+                found = await self._ask(OP_GET_OUTLET_SETTINGS, request, decode_outlet_settings)
+                if found is not None:
+                    settings[number] = found
+            return Reading(state, inlets, usage, settings)
+
         async with self._lock:
-            state = await self._guarded(self._read_state_unlocked)
-            if not state.running:
+            reading = await self._guarded(run)
+            if not reading.state.running:
                 await self._disconnect()
-            return state
+            return reading
 
     async def set_outlets(self, outlets: int, temperature: float, flow: int) -> State:
         """Run exactly ``outlets`` (0 stops everything); return the state after."""
@@ -157,6 +196,25 @@ class MiraClient:
         except MiraError:
             await self._disconnect()
             raise
+
+    async def _ask[T](
+        self, opcode: int, payload: bytes, decode: Callable[[bytes], T | None]
+    ) -> T | None:
+        """Make an extra read; None if the valve ignores it or the reply doesn't decode.
+
+        Not every valve may answer every read, and each unanswered one holds
+        the connection for the full timeout, so one that goes unanswered is
+        not asked again until the integration reloads.
+        """
+        if (opcode, payload) in self.unanswered:
+            return None
+        try:
+            frame = await self._request(opcode, payload)
+        except TimeoutError:
+            _LOGGER.debug("%s: no reply to opcode 0x%02X; not asking again", self.address, opcode)
+            self.unanswered.add((opcode, payload))
+            return None
+        return decode(frame.payload)
 
     async def _read_state_unlocked(self) -> State:
         frame = await self._request(OP_GET_STATE, STATE_REQUEST)

@@ -33,9 +33,12 @@ HEADER_SIZE = 5  # preamble, channel, opcode, payload length
 ENVELOPE_SIZE = HEADER_SIZE + 1  # plus the trailing checksum
 
 OP_ACK = 0x01
+OP_GET_OUTLET_SETTINGS = 0x1B
 OP_GET_STATE = 0x2B
 OP_GET_SERIAL = 0x40
 OP_GET_NAME = 0x44
+OP_GET_INLETS = 0x5B
+OP_GET_USAGE = 0x5C
 OP_SET_OUTLETS = 0xAB
 
 STATUS_OK = 0x01
@@ -44,7 +47,15 @@ STATUS_ERROR = 0x80
 MAX_FLOW = 100
 STATE_REQUEST = bytes([0x02])
 SERIAL_REQUEST = bytes([0x01])
+INLETS_REQUEST = bytes([0x03, 0x00])
+LAST_USAGE_REQUEST = bytes([0x02, 0x00])
 STATE_SIZE = 16
+INLETS_SIZE = 28
+USAGE_SIZE = 6
+OUTLET_SETTINGS_SIZE = 14
+
+#: Flow is a percentage of 25 L/min: the Mira app shows 48 % as 12 L/min.
+LITRES_PER_MINUTE_PER_FLOW = 0.25
 
 #: Outlet bits, as sent to SET_OUTLETS and reported in the state reply.
 OUTLET_BITS = (1, 2, 4)
@@ -78,6 +89,8 @@ class State:
     #: Flow percentage. The valve reports a resting default while idle,
     #: so this is only meaningful while running.
     flow: int
+    #: Flow percentage actually reached; it ramps up after a start.
+    live_flow: int = 0
     #: The undecoded reply payload, kept for diagnostics.
     raw: bytes = b""
 
@@ -86,9 +99,51 @@ class State:
         """Whether any outlet is open."""
         return bool(self.outlets)
 
+    @property
+    def flow_rate(self) -> float:
+        """Litres per minute flowing now (0 while idle)."""
+        return litres_per_minute(self.live_flow) if self.running else 0.0
+
     def outlet_running(self, number: int) -> bool:
         """Whether outlet ``number`` (1-3) is open."""
         return bool(self.outlets & outlet_bit(number))
+
+
+@dataclass(frozen=True)
+class Inlets:
+    """Supply temperatures, in Celsius."""
+
+    #: Unproven: see decode_inlets.
+    hot: float
+    cold: float
+    #: The undecoded reply payload, so the hot inlet can be settled.
+    raw: bytes = b""
+
+
+@dataclass(frozen=True)
+class Usage:
+    """The valve's record of the last finished run, whichever outlet it was."""
+
+    seconds: int
+    litres: int
+    #: Blended water temperature in Celsius, to half a degree.
+    temperature: float
+
+
+@dataclass(frozen=True)
+class OutletSettings:
+    """Limits and defaults the valve applies to one outlet."""
+
+    max_temperature: float
+    #: Flow percentage an outlet starts at from the controller.
+    default_flow: int
+    #: The valve stops the outlet after this many seconds.
+    max_duration: int
+
+
+def litres_per_minute(flow: int) -> float:
+    """Convert a flow percentage to litres per minute."""
+    return flow * LITRES_PER_MINUTE_PER_FLOW
 
 
 def outlet_bit(number: int) -> int:
@@ -154,7 +209,8 @@ def decode_state(payload: bytes) -> State | None:
 
     Offsets were confirmed upstream by commanding known values and reading
     them back: target at 10-11, flow at 12, outlet bits at 13, measured water
-    temperature at 14-15 (tenths of a degree, big endian).
+    temperature at 14-15 (tenths of a degree, big endian). Byte 16 is the flow
+    actually reached; it ramps towards the commanded flow after a start.
     """
     if len(payload) < STATE_SIZE:
         return None
@@ -164,8 +220,66 @@ def decode_state(payload: bytes) -> State | None:
         temperature=int.from_bytes(payload[14:16], "big") / 10,
         target_temperature=target or None,
         flow=payload[12],
+        live_flow=payload[16] if len(payload) > STATE_SIZE else 0,
         raw=bytes(payload),
     )
+
+
+def decode_inlets(payload: bytes) -> Inlets | None:
+    """Decode a GET_INLETS reply, or return None if it is too short.
+
+    The cold inlet is bytes 26-27 in tenths of a degree (20.4 on a valve at
+    rest). Bytes 1-2 follow the state's water temperature, so they are the
+    outlet, not the hot inlet. The hot inlet is taken from bytes 3-4 in
+    tenths, but that is a guess not yet checked against a running shower.
+    """
+    if len(payload) < INLETS_SIZE:
+        return None
+    return Inlets(
+        hot=int.from_bytes(payload[3:5], "big") / 10,
+        cold=int.from_bytes(payload[26:28], "big") / 10,
+        raw=bytes(payload),
+    )
+
+
+def decode_last_usage(payload: bytes) -> Usage | None:
+    """Decode a GET_USAGE reply to LAST_USAGE_REQUEST, or return None.
+
+    Layout: the request's first byte echoed, seconds and litres (16 bit, big
+    endian), then the blended temperature in half degrees. Checked against the
+    Mira app's "last usage" screen.
+    """
+    if len(payload) < USAGE_SIZE or payload[0] != LAST_USAGE_REQUEST[0]:
+        return None
+    return Usage(
+        seconds=int.from_bytes(payload[1:3], "big"),
+        litres=int.from_bytes(payload[3:5], "big"),
+        temperature=payload[5] / 2,
+    )
+
+
+def decode_outlet_settings(payload: bytes) -> OutletSettings | None:
+    """Decode a GET_OUTLET_SETTINGS reply, or return None if it is too short.
+
+    The request names an outlet by index (outlet 1 is 0) and the reply echoes
+    it at byte 0. Maximum temperature is bytes 3-4 (tenths), default flow
+    byte 11, maximum duration bytes 12-13 (seconds). Each was checked by
+    changing it in the Mira app and reading it back.
+    """
+    if len(payload) < OUTLET_SETTINGS_SIZE:
+        return None
+    return OutletSettings(
+        max_temperature=int.from_bytes(payload[3:5], "big") / 10,
+        default_flow=payload[11],
+        max_duration=int.from_bytes(payload[12:14], "big"),
+    )
+
+
+def outlet_settings_request(number: int) -> bytes:
+    """GET_OUTLET_SETTINGS payload for outlet ``number`` (1-3)."""
+    if not 1 <= number <= len(OUTLET_BITS):
+        raise ValueError(f"outlet out of range: {number}")
+    return bytes([number - 1])
 
 
 def decode_text(raw: bytes) -> str | None:

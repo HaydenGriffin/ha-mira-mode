@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.mira_mode.client import ValveInfo
+from custom_components.mira_mode.client import Reading, ValveInfo
 from custom_components.mira_mode.const import CONF_SERIAL, DEFAULT_OUTLET_LABELS, DOMAIN
 from custom_components.mira_mode.protocol import (
     LEGACY_SERVICE_UUID,
@@ -88,9 +88,9 @@ def valve() -> Generator[AsyncMock]:
     """Stand in for the valve: MiraClient's public methods, mocked."""
     with (
         patch(
-            "custom_components.mira_mode.client.MiraClient.read_state",
+            "custom_components.mira_mode.client.MiraClient.read",
             autospec=True,
-        ) as read_state,
+        ) as read,
         patch(
             "custom_components.mira_mode.client.MiraClient.set_outlets",
             autospec=True,
@@ -101,9 +101,9 @@ def valve() -> Generator[AsyncMock]:
         ),
     ):
         mock = AsyncMock()
-        mock.read_state = read_state
+        mock.read = read
         mock.set_outlets = set_outlets
-        read_state.return_value = IDLE
+        read.return_value = Reading(IDLE)
 
         async def follow(_self: object, outlets: int, temperature: float, flow: int) -> State:
             state = RUNNING if outlets else IDLE

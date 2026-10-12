@@ -80,6 +80,39 @@
     "sensor": {
       "water_temperature": {
         "name": "Water temperature"
+      },
+      "flow_rate": {
+        "name": "Flow rate"
+      },
+      "cold_inlet_temperature": {
+        "name": "Cold inlet temperature"
+      },
+      "hot_inlet_temperature": {
+        "name": "Hot inlet temperature"
+      },
+      "last_run_duration": {
+        "name": "Last run duration"
+      },
+      "last_run_water": {
+        "name": "Last run water used"
+      },
+      "last_run_temperature": {
+        "name": "Last run temperature"
+      },
+      "water_used": {
+        "name": "Water used"
+      },
+      "heating_energy": {
+        "name": "Water heating energy"
+      },
+      "max_temperature": {
+        "name": "{outlet} max temperature"
+      },
+      "max_duration": {
+        "name": "{outlet} max duration"
+      },
+      "default_flow": {
+        "name": "{outlet} default flow"
       }
     },
     "switch": {

@@ -12,7 +12,8 @@
 
 Local control of **Mira Mode digital showers** from Home Assistant over
 Bluetooth LE. You can start and stop each outlet, set the temperature and
-flow, and watch the water warm up. It works with a local Bluetooth adapter
+flow, watch the water warm up, and count the water and heat each shower
+uses. It works with a local Bluetooth adapter
 or an ESPHome-style Bluetooth proxy, needs no cloud, and you don't have to
 leave the Mira app running anywhere.
 
@@ -39,6 +40,7 @@ on the protocol work of
 - [Pairing and setup](#pairing-and-setup)
 - [Entities](#entities)
 - [Actions](#actions)
+- [Events](#events)
 - [Automation examples](#automation-examples)
 - [How it talks to the valve](#how-it-talks-to-the-valve)
 - [Troubleshooting](#troubleshooting)
@@ -58,6 +60,13 @@ on the protocol work of
   running. While idle they become the settings for the next start. If you
   change the temperature on the dial or in the Mira app, Home Assistant picks
   it up.
+- **Water and energy tracking.** Live flow rate, the cold supply temperature,
+  the valve's record of the last run (duration, litres, temperature), and
+  running totals of water used and heating energy that survive restarts and
+  work with the Energy dashboard. A `mira_mode_usage` event fires for each
+  finished run.
+- **The valve's own limits** per outlet (maximum temperature, maximum
+  duration, default flow) as diagnostic sensors.
 - **A `mira_mode.start` action** that sets the temperature and flow and starts
   an outlet in one step, built for automations and notification buttons.
 - **Commands are confirmed.** Every command must be acknowledged by the valve
@@ -78,9 +87,11 @@ Development and live testing used a current-generation dual-outlet valve.
 Status reads and remote start and stop were verified on it through a
 Bluetooth proxy.
 
-> **0.1.0 status:** the protocol, start and stop were proven on hardware with an earlier, YAML-configured version
-> of this code. The setup flow, in-flow pairing and per-outlet switching in this release are covered by tests against
-> a simulated valve but haven't been run on a real valve yet. Reports either way are very welcome.
+> **0.2.0 status:** the protocol, start and stop, and the reads added in 0.2.0 (cold inlet, flow rate, last run,
+> outlet limits) were proven on hardware with an earlier, YAML-configured version of this code; the last run and the
+> outlet limits match what the Mira app shows. The setup flow, in-flow pairing and per-outlet switching are covered by
+> tests against a simulated valve but haven't been run on a real valve yet. The hot inlet temperature is experimental
+> (see [Entities](#entities)). Reports either way are very welcome.
 
 Other valves in the current range should work, but only the
 outlets your unit actually has will do anything.
@@ -166,9 +177,25 @@ Entity ids below assume a device named *Mira Shower*, with outlet 1 labelled
 | Button: Stop | `button.mira_shower_stop` | Turns every outlet off and leaves the valve's temperature setting alone. Stays available even if the last poll failed. |
 | Binary sensor: Running | `binary_sensor.mira_shower_running` | On while any outlet is open, whoever started it. |
 | Sensor: Water temperature | `sensor.mira_shower_water_temperature` | Measured water temperature at the valve. Near room temperature while idle. |
+| Sensor: Flow rate | `sensor.mira_shower_flow_rate` | Litres per minute flowing now, 0 while idle. The valve reports flow as a percentage of 25 L/min, and it ramps up for a few seconds after a start. |
+| Sensor: Cold inlet temperature | `sensor.mira_shower_cold_inlet_temperature` | Temperature of the cold supply. |
+| Sensor: Hot inlet temperature | `sensor.mira_shower_hot_inlet_temperature` | **Experimental, disabled by default.** Which bytes carry the hot supply temperature isn't proven yet, so don't rely on the value. It has a `raw` attribute with the valve's whole reply; if you enable it, a diagnostics download taken during a shower helps settle it. |
+| Sensor: Last run duration, water used, temperature | `sensor.mira_shower_last_run_duration`, `..._last_run_water_used`, `..._last_run_temperature` | The valve's own record of the last finished run, whichever outlet and whoever started it: seconds, whole litres and the blended temperature (to 0.5 °C). |
+| Sensor: Water used | `sensor.mira_shower_water_used` | Running total in litres (`total_increasing`). Each finished run is added once. |
+| Sensor: Water heating energy | `sensor.mira_shower_water_heating_energy` | Running total in kWh: the heat that took each run's water from the cold inlet temperature to its blended temperature. An estimate of heat delivered, not of what your boiler burned. Runs finished before the cold inlet has been read add nothing. |
+| Diagnostic sensors, per labelled outlet: max temperature, max duration, default flow | `sensor.mira_shower_outlet_1_max_temperature`, `..._max_duration`, `..._default_flow` | The limits and default the valve applies to that outlet, as set in the Mira app. Read every 30 minutes. |
 
-Switch entity ids use the outlet number (`outlet_1`), so renaming a label
-doesn't break your automations.
+Switch and outlet diagnostic entity ids use the outlet number (`outlet_1`),
+so renaming a label doesn't break your automations.
+
+The totals only grow while Home Assistant is running. A run that starts and
+finishes while it is down, or while the valve is out of reach, is not
+counted, and neither is a run identical to the one before it (same seconds,
+litres and temperature), because the valve only reports the last run. The
+first record seen after a restart is taken as already counted. For daily,
+weekly or monthly figures, use the Energy dashboard, statistics, or a
+[utility meter](https://www.home-assistant.io/integrations/utility_meter/)
+on top of the totals.
 
 ## Actions
 
@@ -188,6 +215,36 @@ data:
 ```
 
 To stop, use `switch.turn_off` on an outlet, or press the Stop button.
+
+## Events
+
+### `mira_mode_usage`
+
+Fired once for each run the valve records as finished, on the first idle
+poll after it ends (within about a minute). It is the same run that is added
+to the totals.
+
+| Field | Meaning |
+| --- | --- |
+| `device_id` | The valve's device |
+| `seconds` | How long the run lasted |
+| `litres` | Water used, in whole litres |
+| `temperature` | Blended water temperature in °C, to 0.5 ° |
+| `energy_kwh` | Heating energy in kWh, or `null` if the cold inlet hasn't been read |
+
+```yaml
+- alias: Log each shower
+  triggers:
+    - trigger: event
+      event_type: mira_mode_usage
+  actions:
+    - action: logbook.log
+      data:
+        name: Shower
+        message: >
+          {{ (trigger.event.data.seconds / 60) | round(1) }} min,
+          {{ trigger.event.data.litres }} L at {{ trigger.event.data.temperature }} °C
+```
 
 ## Automation examples
 
@@ -296,10 +353,15 @@ a notification.
 
 ## How it talks to the valve
 
-- **Idle:** about once a minute, Home Assistant connects, reads the state and
-  disconnects. The valve is free for the Mira app the rest of the time.
-- **Running:** the connection stays open and the state is read every
+- **Idle:** about once a minute, Home Assistant connects, reads the state,
+  the inlet temperatures and the last run, and disconnects. The valve is free
+  for the Mira app the rest of the time. Every 30 minutes the same connection
+  also reads each labelled outlet's settings.
+- **Running:** the connection stays open and the same reads happen every
   10 seconds. While the shower runs, the Mira app can't connect.
+- **Unanswered reads:** if the valve ignores one of the extra reads, it isn't
+  asked again until the integration reloads, so it can't slow every poll
+  down. The diagnostics download lists any that were dropped.
 - **Commands:** each `SET_OUTLETS` command names the complete set of running
   outlets, with the temperature in tenths of a degree and the flow as a
   percentage. The valve must acknowledge it, and a state read straight
@@ -317,7 +379,7 @@ a notification.
 | Setup: *pairing failed* | The controller wasn't flashing, or the proxy can't pair. See [the bond lives on the adapter](#the-bond-lives-on-the-adapter-not-on-home-assistant). |
 | Entities unavailable after working before | The bond was lost, or Home Assistant now connects through a different proxy that has no bond. Use **Reconfigure** to pair again. Also check that the proxy is still scanning. |
 | *No connectable Bluetooth adapter or proxy can see the valve* | No active proxy is in range, or the valve has no power. Proxies with few connection slots can also be full: a running valve holds one slot. |
-| A value looks wrong | Download diagnostics (device page → ⋮ → *Download diagnostics*). It includes the raw state bytes, with the address and serial number redacted. Attach it to an issue. |
+| A value looks wrong | Download diagnostics (device page → ⋮ → *Download diagnostics*). It includes the raw state and inlet bytes, with the address and serial number redacted. Attach it to an issue. |
 
 ## Safety
 
@@ -354,7 +416,8 @@ The protocol tests use replies recorded from real valves. CI also runs
   (MIT) reverse engineered the current-generation protocol: framing,
   checksum, opcodes and the state layout. It also provided the
   hardware-recorded replies used as test vectors here. `protocol.py` is a port
-  of that work. See [NOTICE](NOTICE).
+  of that work. See [NOTICE](NOTICE). The inlet, last-run and outlet-settings
+  reads added in 0.2.0 were worked out here from captures of the Mira app.
 - Nigel Hannam's
   [shower-controller-documentation](https://github.com/nhannam/shower-controller-documentation)
   documents the older generation of these valves, and the upstream project

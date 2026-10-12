@@ -14,7 +14,18 @@
       "flow": { "default": "mdi:water-percent" }
     },
     "sensor": {
-      "water_temperature": { "default": "mdi:thermometer-water" }
+      "water_temperature": { "default": "mdi:thermometer-water" },
+      "flow_rate": { "default": "mdi:water-pump" },
+      "cold_inlet_temperature": { "default": "mdi:snowflake-thermometer" },
+      "hot_inlet_temperature": { "default": "mdi:water-boiler" },
+      "last_run_duration": { "default": "mdi:timer-outline" },
+      "last_run_water": { "default": "mdi:water" },
+      "last_run_temperature": { "default": "mdi:thermometer-water" },
+      "water_used": { "default": "mdi:water-plus" },
+      "heating_energy": { "default": "mdi:fire" },
+      "max_temperature": { "default": "mdi:thermometer-alert" },
+      "max_duration": { "default": "mdi:timer-cog-outline" },
+      "default_flow": { "default": "mdi:water-pump" }
     },
     "switch": {
       "outlet": {
