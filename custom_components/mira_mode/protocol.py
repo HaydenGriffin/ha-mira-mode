@@ -50,9 +50,11 @@ SERIAL_REQUEST = bytes([0x01])
 INLETS_REQUEST = bytes([0x03, 0x00])
 LAST_USAGE_REQUEST = bytes([0x02, 0x00])
 STATE_SIZE = 16
-INLETS_SIZE = 28
+#: Replies share one opcode, so the extra reads are only accepted at exactly
+#: their own size (and, for outlet settings, with the right outlet echoed).
+INLETS_SIZE = 31
 USAGE_SIZE = 6
-OUTLET_SETTINGS_SIZE = 14
+OUTLET_SETTINGS_SIZE = 16
 
 #: Flow is a percentage of 25 L/min: the Mira app shows 48 % as 12 L/min.
 LITRES_PER_MINUTE_PER_FLOW = 0.25
@@ -226,14 +228,14 @@ def decode_state(payload: bytes) -> State | None:
 
 
 def decode_inlets(payload: bytes) -> Inlets | None:
-    """Decode a GET_INLETS reply, or return None if it is too short.
+    """Decode a GET_INLETS reply, or return None if it isn't one.
 
     The cold inlet is bytes 26-27 in tenths of a degree (20.4 on a valve at
     rest). Bytes 1-2 follow the state's water temperature, so they are the
     outlet, not the hot inlet. The hot inlet is taken from bytes 3-4 in
     tenths, but that is a guess not yet checked against a running shower.
     """
-    if len(payload) < INLETS_SIZE:
+    if len(payload) != INLETS_SIZE:
         return None
     return Inlets(
         hot=int.from_bytes(payload[3:5], "big") / 10,
@@ -249,7 +251,7 @@ def decode_last_usage(payload: bytes) -> Usage | None:
     endian), then the blended temperature in half degrees. Checked against the
     Mira app's "last usage" screen.
     """
-    if len(payload) < USAGE_SIZE or payload[0] != LAST_USAGE_REQUEST[0]:
+    if len(payload) != USAGE_SIZE or payload[0] != LAST_USAGE_REQUEST[0]:
         return None
     return Usage(
         seconds=int.from_bytes(payload[1:3], "big"),
@@ -258,15 +260,15 @@ def decode_last_usage(payload: bytes) -> Usage | None:
     )
 
 
-def decode_outlet_settings(payload: bytes) -> OutletSettings | None:
-    """Decode a GET_OUTLET_SETTINGS reply, or return None if it is too short.
+def decode_outlet_settings(payload: bytes, number: int) -> OutletSettings | None:
+    """Decode outlet ``number``'s GET_OUTLET_SETTINGS reply, or None if it isn't one.
 
     The request names an outlet by index (outlet 1 is 0) and the reply echoes
     it at byte 0. Maximum temperature is bytes 3-4 (tenths), default flow
     byte 11, maximum duration bytes 12-13 (seconds). Each was checked by
     changing it in the Mira app and reading it back.
     """
-    if len(payload) < OUTLET_SETTINGS_SIZE:
+    if len(payload) != OUTLET_SETTINGS_SIZE or payload[0] != number - 1:
         return None
     return OutletSettings(
         max_temperature=int.from_bytes(payload[3:5], "big") / 10,

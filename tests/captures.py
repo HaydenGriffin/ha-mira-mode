@@ -79,5 +79,9 @@ USAGE_PAGE = payload("00 01 01 00 08 00 57 55 83 ff")
 #: Opcode 0x1B for outlet 1: 45.0 C maximum, flow 48 (12 L/min), 1800 s.
 OUTLET_SETTINGS = payload("00 01 01 01 c2 01 2c 01 7c 40 10 30 07 08 00 00")
 
-#: The same after setting 46.0 C, 14 L/min and 15 minutes in the app.
+#: Opcode 0x1B for outlet 2 (index 1 echoed first), after setting 46.0 C,
+#: 14 L/min and 15 minutes in the app.
+OUTLET_2_SETTINGS = payload("01 01 01 01 cc 01 2c 01 7c 58 10 38 03 84 00 00")
+
+#: Outlet 1 after the same change in the app.
 OUTLET_SETTINGS_CHANGED = payload("00 01 01 01 cc 01 2c 01 7c 58 10 38 03 84 00 00")

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 import logging
 
 from bleak.backends.device import BLEDevice
@@ -127,8 +128,11 @@ class MiraClient:
             usage = await self._ask(OP_GET_USAGE, LAST_USAGE_REQUEST, decode_last_usage)
             settings: dict[int, OutletSettings] = {}
             for number in outlets:
-                request = outlet_settings_request(number)
-                found = await self._ask(OP_GET_OUTLET_SETTINGS, request, decode_outlet_settings)
+                found = await self._ask(
+                    OP_GET_OUTLET_SETTINGS,
+                    outlet_settings_request(number),
+                    partial(decode_outlet_settings, number=number),
+                )
                 if found is not None:
                     settings[number] = found
             return Reading(state, inlets, usage, settings)
@@ -162,15 +166,19 @@ class MiraClient:
         """
 
         async def ask_text(opcode: int, payload: bytes = b"") -> str | None:
+            if not self.connected:
+                return None
             try:
                 return decode_text((await self._request(opcode, payload)).payload)
             except TimeoutError:
                 return None
 
         async def run() -> ValveInfo:
+            # State first: an unanswered name or serial drops the link.
+            state = await self._read_state_unlocked()
             name = await ask_text(OP_GET_NAME)
             serial = await ask_text(OP_GET_SERIAL, SERIAL_REQUEST)
-            return ValveInfo(name, serial, await self._read_state_unlocked())
+            return ValveInfo(name, serial, state)
 
         async with self._lock:
             await self._disconnect()
@@ -206,7 +214,7 @@ class MiraClient:
         the connection for the full timeout, so one that goes unanswered is
         not asked again until the integration reloads.
         """
-        if (opcode, payload) in self.unanswered:
+        if (opcode, payload) in self.unanswered or not self.connected:
             return None
         try:
             frame = await self._request(opcode, payload)
@@ -290,6 +298,12 @@ class MiraClient:
                 pending.set_result(frame)
 
     async def _request(self, opcode: int, payload: bytes = b"") -> Frame:
+        """Send one command and return the next frame to arrive.
+
+        Every reply has the same opcode, so a reply that turns up after its
+        timeout would be taken as the answer to the next command. A timeout
+        therefore drops the connection before it is raised.
+        """
         if self._client is None:
             raise ValveUnreachable("not connected")
         future: asyncio.Future[Frame] = asyncio.get_running_loop().create_future()
@@ -299,6 +313,9 @@ class MiraClient:
                 COMMAND_CHAR_UUID, encode_frame(opcode, payload), response=False
             )
             return await asyncio.wait_for(future, RESPONSE_TIMEOUT)
+        except TimeoutError:
+            await self._disconnect()
+            raise
         finally:
             if self._pending is future:
                 self._pending = None

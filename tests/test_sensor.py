@@ -30,7 +30,7 @@ from .conftest import IDLE
 
 INLETS = decode_inlets(captures.INLETS)
 LAST_USAGE = decode_last_usage(captures.LAST_USAGE)
-SETTINGS = decode_outlet_settings(captures.OUTLET_SETTINGS)
+SETTINGS = decode_outlet_settings(captures.OUTLET_SETTINGS, 1)
 RAMPING = decode_state(captures.STATE_RAMPING)
 assert INLETS and LAST_USAGE and SETTINGS and RAMPING
 

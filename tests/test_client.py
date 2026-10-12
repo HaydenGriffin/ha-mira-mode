@@ -40,9 +40,17 @@ NACK = captures.frame(b"\x80")
 class FakeValve:
     """A BleakClient stand-in: answers each written frame with a canned reply."""
 
-    def __init__(self, replies: dict[int, bytes], chunk: int = 0) -> None:
+    def __init__(
+        self,
+        replies: dict[int | tuple[int, bytes], bytes],
+        chunk: int = 0,
+        delays: dict[int, float] | None = None,
+    ) -> None:
+        #: Keyed by opcode, or by (opcode, payload) where the payload matters.
         self.replies = replies
         self.chunk = chunk
+        #: Opcodes answered late, after this many seconds.
+        self.delays = delays or {}
         self.is_connected = True
         self.log: list[Any] = []
         self.written: list[bytes] = []
@@ -57,6 +65,7 @@ class FakeValve:
 
     async def start_notify(self, _uuid: str, callback: Callable[[object, bytearray], None]) -> None:
         self.log.append("notify")
+        self.is_connected = True  # the same stand-in is handed out on reconnect
         self._notify = callback
 
     async def write_gatt_char(self, _uuid: str, data: bytes, response: bool) -> None:
@@ -64,11 +73,14 @@ class FakeValve:
         frame = decode_frame(bytes(data))
         assert frame is not None
         self.log.append(frame.opcode)
-        reply = self.replies.get(frame.opcode)
+        reply = self.replies.get((frame.opcode, frame.payload), self.replies.get(frame.opcode))
         if reply is None:
             return
-        size = self.chunk or len(reply)
         loop = asyncio.get_running_loop()
+        if frame.opcode in self.delays:
+            loop.call_later(self.delays[frame.opcode], self._notify, None, bytearray(reply))
+            return
+        size = self.chunk or len(reply)
         for i in range(0, len(reply), size):
             loop.call_soon(self._notify, None, bytearray(reply[i : i + size]))
 
@@ -77,7 +89,9 @@ class FakeValve:
         self.is_connected = False
 
 
-def replies(state: bytes = captures.STATE_IDLE, ack: bytes = captures.ACK) -> dict[int, bytes]:
+def replies(
+    state: bytes = captures.STATE_IDLE, ack: bytes = captures.ACK
+) -> dict[int | tuple[int, bytes], bytes]:
     return {
         OP_GET_STATE: captures.frame(state),
         OP_SET_OUTLETS: ack,
@@ -85,7 +99,8 @@ def replies(state: bytes = captures.STATE_IDLE, ack: bytes = captures.ACK) -> di
         OP_GET_SERIAL: captures.frame(captures.SERIAL),
         OP_GET_INLETS: captures.frame(captures.INLETS),
         OP_GET_USAGE: captures.frame(captures.LAST_USAGE),
-        OP_GET_OUTLET_SETTINGS: captures.frame(captures.OUTLET_SETTINGS),
+        (OP_GET_OUTLET_SETTINGS, b"\x00"): captures.frame(captures.OUTLET_SETTINGS),
+        (OP_GET_OUTLET_SETTINGS, b"\x01"): captures.frame(captures.OUTLET_2_SETTINGS),
     }
 
 
@@ -124,8 +139,8 @@ async def test_outlet_settings_are_read_when_asked(hass: HomeAssistant, connect:
     reading = await MiraClient(hass, ADDRESS).read([1, 2])
     assert valve.written[-2:] == [bytes.fromhex("aa55001b0100e5"), bytes.fromhex("aa55001b0101e4")]
     assert valve.log[-1] == "disconnect"
-    assert set(reading.outlet_settings) == {1, 2}
-    assert reading.outlet_settings[1].max_temperature == 45.0
+    assert {n: s.max_temperature for n, s in reading.outlet_settings.items()} == {1: 45.0, 2: 46.0}
+    assert reading.outlet_settings[2].max_duration == 900
 
 
 async def test_an_ignored_extra_read_is_not_asked_again(
@@ -141,13 +156,13 @@ async def test_an_ignored_extra_read_is_not_asked_again(
     client = MiraClient(hass, ADDRESS)
     with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.01):
         first = await client.read()
-    assert first.inlets is None and first.last_usage is not None
+    assert first.inlets is None and first.last_usage is None
     assert client.unanswered == {(OP_GET_INLETS, b"\x03\x00")}
 
     valve.log.clear()
     second = await client.read()
     assert valve.log == ["notify", OP_GET_STATE, OP_GET_USAGE, "disconnect"]
-    assert second.last_usage == first.last_usage
+    assert second.last_usage is not None
 
 
 async def test_running_read_keeps_the_connection(hass: HomeAssistant, connect: AsyncMock) -> None:
@@ -271,3 +286,40 @@ async def test_disconnect_while_waiting_fails_fast(hass: HomeAssistant, connect:
     on_disconnect(valve)
     with pytest.raises(ValveUnreachable, match="disconnected"):
         await task
+
+
+async def test_a_late_reply_is_never_taken_for_the_next_answer(
+    hass: HomeAssistant, connect: AsyncMock
+) -> None:
+    # The inlet reply turns up after its timeout, while outlet settings are
+    # pending: read as settings it would say 36.1 C, flow 1, 52272 s.
+    valve = FakeValve(
+        {
+            OP_GET_STATE: captures.frame(captures.STATE_IDLE),
+            OP_GET_INLETS: captures.frame(captures.INLETS),
+            OP_GET_USAGE: captures.frame(captures.LAST_USAGE),
+        },
+        delays={OP_GET_INLETS: 0.03},
+    )
+    connect.return_value = valve
+    with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.02):
+        reading = await MiraClient(hass, ADDRESS).read([1])
+        await asyncio.sleep(0.05)
+    assert reading.inlets is None
+    assert reading.outlet_settings == {}
+    # The rest of the reads are abandoned and the link dropped.
+    assert valve.log == ["notify", OP_GET_STATE, OP_GET_INLETS, "disconnect"]
+
+
+async def test_identify_drops_the_link_after_an_unanswered_name(
+    hass: HomeAssistant, connect: AsyncMock
+) -> None:
+    valve = FakeValve(replies(), delays={OP_GET_NAME: 0.03})
+    connect.return_value = valve
+    with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.02):
+        info = await MiraClient(hass, ADDRESS).identify(pair=False)
+        await asyncio.sleep(0.05)
+    # The late name must not be read as the serial.
+    assert (info.name, info.serial) == (None, None)
+    assert not info.state.running
+    assert OP_GET_SERIAL not in valve.log

@@ -190,8 +190,13 @@ class TestInlets:
         assert inlets.hot == 36.1  # unproven: see decode_inlets
         assert inlets.raw == captures.INLETS
 
-    def test_rejects_a_short_reply(self) -> None:
-        assert p.decode_inlets(captures.INLETS[:20]) is None
+    @pytest.mark.parametrize(
+        "raw",
+        [captures.INLETS[:20], captures.INLETS + b"\x00", captures.OUTLET_SETTINGS],
+        ids=["short", "long", "outlet settings"],
+    )
+    def test_rejects_other_replies(self, raw: bytes) -> None:
+        assert p.decode_inlets(raw) is None
 
 
 class TestLastUsage:
@@ -199,26 +204,36 @@ class TestLastUsage:
         usage = p.decode_last_usage(captures.LAST_USAGE)
         assert usage == p.Usage(seconds=10, litres=1, temperature=44.0)
 
-    @pytest.mark.parametrize("raw", [captures.USAGE_PAGE, captures.LAST_USAGE[:5], b""])
+    @pytest.mark.parametrize(
+        "raw", [captures.USAGE_PAGE, captures.LAST_USAGE[:5], captures.LAST_USAGE + b"\x00", b""]
+    )
     def test_rejects_other_replies(self, raw: bytes) -> None:
         assert p.decode_last_usage(raw) is None
 
 
 class TestOutletSettings:
     def test_decodes_the_capture(self) -> None:
-        settings = p.decode_outlet_settings(captures.OUTLET_SETTINGS)
+        settings = p.decode_outlet_settings(captures.OUTLET_SETTINGS, 1)
         assert settings == p.OutletSettings(
             max_temperature=45.0, default_flow=48, max_duration=1800
         )
         assert p.litres_per_minute(settings.default_flow) == 12.0
 
     def test_follows_changes_made_in_the_app(self) -> None:
-        settings = p.decode_outlet_settings(captures.OUTLET_SETTINGS_CHANGED)
+        settings = p.decode_outlet_settings(captures.OUTLET_SETTINGS_CHANGED, 1)
         assert settings == p.OutletSettings(max_temperature=46.0, default_flow=56, max_duration=900)
         assert p.litres_per_minute(settings.default_flow) == 14.0
 
-    def test_rejects_a_short_reply(self) -> None:
-        assert p.decode_outlet_settings(captures.OUTLET_SETTINGS[:10]) is None
+    @pytest.mark.parametrize(
+        "raw",
+        [captures.OUTLET_SETTINGS[:10], captures.OUTLET_SETTINGS + b"\x00", captures.INLETS],
+        ids=["short", "long", "inlets"],
+    )
+    def test_rejects_other_replies(self, raw: bytes) -> None:
+        assert p.decode_outlet_settings(raw, 1) is None
+
+    def test_rejects_another_outlet_s_reply(self) -> None:
+        assert p.decode_outlet_settings(captures.OUTLET_SETTINGS, 2) is None
 
     @pytest.mark.parametrize("number", [0, 4])
     def test_request_rejects_unknown_outlets(self, number: int) -> None:
