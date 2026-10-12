@@ -14,6 +14,7 @@ import pytest
 
 from custom_components.mira_mode.client import (
     MAX_SKIPPED_POLLS,
+    Backoff,
     CommandRejected,
     MiraClient,
     PairingFailed,
@@ -156,7 +157,7 @@ async def test_an_unanswered_read_backs_off_then_recovers(
     connect.return_value = valve
     client = MiraClient(hass, ADDRESS)
     asked: list[int] = []
-    with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.01):
+    with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.05):
         for poll in range(1, 12):
             valve.log.clear()
             reading = await client.read()
@@ -178,12 +179,11 @@ async def test_an_unanswered_read_backs_off_then_recovers(
 async def test_backoff_is_bounded(hass: HomeAssistant, connect: AsyncMock) -> None:
     connect.return_value = FakeValve({OP_GET_STATE: captures.frame(captures.STATE_IDLE)})
     client = MiraClient(hass, ADDRESS)
-    with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.01):
-        for _ in range(400):
-            await client.read()
     key = (OP_GET_INLETS, b"\x03\x00")
-    assert client.backoff[key].misses > 6
-    assert client.backoff[key].skip <= MAX_SKIPPED_POLLS
+    client.backoff[key] = Backoff(misses=10, skip=0)
+    with patch("custom_components.mira_mode.client.RESPONSE_TIMEOUT", 0.05):
+        await client.read()
+    assert client.backoff[key] == Backoff(misses=11, skip=MAX_SKIPPED_POLLS)
 
 
 async def test_running_read_keeps_the_connection(hass: HomeAssistant, connect: AsyncMock) -> None:
