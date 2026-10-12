@@ -38,6 +38,7 @@ on the protocol work of
 - [Supported hardware](#supported-hardware)
 - [Installation](#installation)
 - [Pairing and setup](#pairing-and-setup)
+- [Removal](#removal)
 - [Entities](#entities)
 - [Actions](#actions)
 - [Events](#events)
@@ -164,10 +165,22 @@ consequences:
   that runs a proxy app, or `bluetoothctl` on a Linux host.
 - The valve stores up to ten paired devices.
 
+## Removal
+
+1. In **Settings → Devices & services → Mira Mode**, open the valve's entry
+   menu (⋮) and select **Delete**.
+2. If you installed through HACS, remove **Mira Mode** in HACS and restart
+   Home Assistant. For a manual install, delete
+   `config/custom_components/mira_mode` and restart.
+3. Optional: unpair the valve from the adapter or proxy that bonded with it,
+   for example `bluetoothctl remove AA:BB:CC:DD:EE:FF` on a Linux host, or
+   the Bluetooth settings of the device running the proxy.
+
 ## Entities
 
-Entity ids below assume a device named *Mira Shower*, with outlet 1 labelled
-*Shower* and outlet 2 labelled *Bath fill*.
+Example ids below assume a new valve named *Mira Shower*, set up with the
+default labels and then relabelled: outlet 1 *Shower*, outlet 2 *Bath fill*.
+See [entity ids](#entity-ids) for why the ids still say `outlet_1`.
 
 | Entity | Example id | What it does |
 | --- | --- | --- |
@@ -185,16 +198,33 @@ Entity ids below assume a device named *Mira Shower*, with outlet 1 labelled
 | Sensor: Water heating energy | `sensor.mira_shower_water_heating_energy` | Running total in kWh: the heat that took each run's water from the cold inlet temperature to its blended temperature. An estimate of heat delivered, not of what your boiler burned. Runs finished before the cold inlet has been read add nothing. |
 | Diagnostic sensors, per labelled outlet: max temperature, max duration, default flow | `sensor.mira_shower_outlet_1_max_temperature`, `..._max_duration`, `..._default_flow` | The limits and default the valve applies to that outlet, as set in the Mira app. Read every 30 minutes. |
 
-Switch and outlet diagnostic entity ids use the outlet number (`outlet_1`),
-so renaming a label doesn't break your automations.
+### Entity ids
 
-The totals only grow while Home Assistant is running. A run that starts and
-finishes while it is down, or while the valve is out of reach, is not
-counted, and neither is a run identical to the one before it (same seconds,
-litres and temperature), because the valve only reports the last run. The
-first record seen after a restart is taken as already counted. For daily,
-weekly or monthly figures, use the Energy dashboard, statistics, or a
-[utility meter](https://www.home-assistant.io/integrations/utility_meter/)
+An entity id is made from the entity's name when the entity is first created,
+and doesn't change after that. A new valve starts with the labels *Outlet 1*
+and *Outlet 2*, which is where `outlet_1` and `outlet_2` in the ids above come
+from; relabelling later only changes the name shown. An entity created after
+you set a label takes its id from the label instead. For example, labelling
+outlet 3 *Handset* later gives `switch.mira_shower_handset`, and upgrading
+from 0.1.0 with outlet 2 already labelled *Bath fill* gives
+`sensor.mira_shower_bath_fill_max_temperature`. The device page shows the
+real ids.
+
+### How the totals count
+
+The valve only reports its most recent run. The totals add that record each
+time a new, distinct one is observed, which leaves some gaps:
+
+- If several runs finish while the valve is out of reach, only the latest is
+  counted when it is reachable again; the earlier ones are lost.
+- After a restart or reload, the first record seen only sets a baseline and
+  is not counted, so a run that finished while Home Assistant was down is
+  lost.
+- A record identical to the previous one (same seconds, litres and
+  temperature) looks like the same run and is not counted again.
+
+For daily, weekly or monthly figures, use the Energy dashboard, statistics,
+or a [utility meter](https://www.home-assistant.io/integrations/utility_meter/)
 on top of the totals.
 
 ## Actions
@@ -220,9 +250,10 @@ To stop, use `switch.turn_off` on an outlet, or press the Stop button.
 
 ### `mira_mode_usage`
 
-Fired once for each run the valve records as finished, on the first idle
-poll after it ends (within about a minute). It is the same run that is added
-to the totals.
+Fired for each newly observed, distinct last-run record, on the first idle
+poll that sees it (usually within a minute of the run ending). These are the
+same records that are added to the totals, with the same gaps: see
+[how the totals count](#how-the-totals-count).
 
 | Field | Meaning |
 | --- | --- |
