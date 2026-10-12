@@ -358,7 +358,9 @@ a notification.
   for the Mira app the rest of the time. Every 30 minutes the same connection
   also reads each labelled outlet's settings.
 - **Running:** the connection stays open and the same reads happen every
-  10 seconds. While the shower runs, the Mira app can't connect.
+  10 seconds. While the shower runs, the Mira app can't connect. If a poll
+  fails (often because the Mira app got the connection first), polling drops
+  back to once a minute until a read succeeds.
 - **Unanswered reads:** replies carry no reference to the request, so if
   any read times out the connection is dropped and the rest of that poll's
   reads are skipped (a late reply could otherwise be mistaken for the next

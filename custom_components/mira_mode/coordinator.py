@@ -109,9 +109,12 @@ class MiraCoordinator(DataUpdateCoordinator[State]):
         outlets = self._outlets_due()
         try:
             reading = await self.client.read(outlets)
-        except ValveNotFound as err:
-            raise UpdateFailed(translation_domain=DOMAIN, translation_key="not_found") from err
         except MiraError as err:
+            # Often the Mira app holds the one connection: don't fight it for
+            # it every few seconds.
+            self.update_interval = IDLE_INTERVAL
+            if isinstance(err, ValveNotFound):
+                raise UpdateFailed(translation_domain=DOMAIN, translation_key="not_found") from err
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="communication_error",

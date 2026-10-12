@@ -116,6 +116,34 @@ async def test_running_valve_is_polled_faster_and_followed(
     assert valve.read.await_count == calls + 1
 
 
+async def test_a_failed_poll_while_running_backs_off_to_the_idle_rate(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    valve: AsyncMock,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    await _setup(hass, config_entry)
+    valve.read.return_value = Reading(RUNNING)
+    freezer.tick(timedelta(seconds=60))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    # Probably the Mira app holds the one connection: don't fight it every 10 s.
+    valve.read.side_effect = ValveUnreachable("timeout")
+    freezer.tick(timedelta(seconds=10))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    calls = valve.read.await_count
+    freezer.tick(timedelta(seconds=10))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert valve.read.await_count == calls
+    freezer.tick(timedelta(seconds=50))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert valve.read.await_count == calls + 1
+
+
 async def test_poll_failure_marks_entities_unavailable_but_keeps_controls(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,
