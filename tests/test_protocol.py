@@ -249,7 +249,7 @@ def test_outlet_bit_rejects_unknown_outlets(number: int) -> None:
 
 class TestText:
     def test_name(self) -> None:
-        assert p.decode_text(captures.NAME) == "Bathroom"
+        assert p.decode_text(captures.NAME) == "Demo valve"
 
     def test_serial(self) -> None:
         assert p.decode_text(captures.SERIAL) == "0000111122223333"

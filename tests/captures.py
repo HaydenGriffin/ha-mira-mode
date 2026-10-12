@@ -35,8 +35,8 @@ STATE_RUNNING_WARMER = payload("21 20 00 00 00 1b 00 00 00 00 01 a4 32 01 01 04 
 #: Just after stopping.
 STATE_STOPPED = payload("21 20 00 00 00 00 00 00 80 00 00 00 10 00 01 03 00 01")
 
-#: Opcode 0x44: the valve is named after where it is installed.
-NAME = payload("42 61 74 68 72 6f 6f 6d 00 00 00 00 00 00 00 00")
+#: Opcode 0x44: the layout of a real reply, with a made-up name.
+NAME = payload("44 65 6d 6f 20 76 61 6c 76 65 00 00 00 00 00 00")
 
 #: Opcode 0x40, as printed on the unit. The layout of a real reply, with a
 #: made-up serial in place of the real one.
