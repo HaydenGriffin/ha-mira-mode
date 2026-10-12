@@ -439,7 +439,7 @@ a notification.
 
 ```console
 python3.14 -m venv .venv && . .venv/bin/activate
-pip install -r requirements_test.txt ruff mypy
+pip install -r requirements_test.txt
 pytest            # protocol, transport, config flow and entity tests; no hardware needed
 ruff check . && ruff format --check .
 mypy custom_components/mira_mode

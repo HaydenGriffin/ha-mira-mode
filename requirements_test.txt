@@ -11,3 +11,6 @@ dbus-fast==5.0.22
 habluetooth==6.26.11
 aiousbwatcher==1.1.2
 serialx==1.10.0
+# Lint and type check, pinned so CI matches local runs.
+ruff==0.17.0
+mypy==2.4.0
