@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import AsyncMock
+import json
+from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.const import ATTR_ENTITY_ID
@@ -26,7 +27,7 @@ from custom_components.mira_mode.protocol import (
 )
 
 from . import captures
-from .conftest import IDLE
+from .conftest import IDLE, service_info
 
 INLETS = decode_inlets(captures.INLETS)
 LAST_USAGE = decode_last_usage(captures.LAST_USAGE)
@@ -296,3 +297,29 @@ async def test_energy_is_not_estimated_from_a_stale_inlet(
     assert _state(hass, WATER_USED) == "120.0"
     assert _state(hass, ENERGY) == "0.0"
     assert events[0]["energy_kwh"] is None
+
+
+async def test_diagnostics_hide_names_people_chose(
+    hass: HomeAssistant, config_entry: MockConfigEntry, valve: AsyncMock
+) -> None:
+    from custom_components.mira_mode.diagnostics import async_get_config_entry_diagnostics
+
+    hass.config_entries.async_update_entry(
+        config_entry, options={"outlet_1": "Robin's shower", "outlet_2": "", "outlet_3": ""}
+    )
+    advert = service_info(name="Mira Robin Flat 4")
+    advert.manufacturer_data[0x0A12] = b"Robin\x00\x01"
+    await _setup(hass, config_entry)
+    with patch(
+        "custom_components.mira_mode.diagnostics.async_last_service_info", return_value=advert
+    ):
+        result = await async_get_config_entry_diagnostics(hass, config_entry)
+    assert "Robin" not in json.dumps(result)
+    assert result["entry"]["options"] == {
+        "outlet_1": "**REDACTED**",
+        "outlet_2": "",
+        "outlet_3": "",
+    }
+    assert result["advertisement"]["name"] == "**REDACTED**"
+    assert result["advertisement"]["manufacturer_data"] == {"2578": "7 bytes"}
+    assert result["advertisement"]["service_uuids"] == advert.service_uuids

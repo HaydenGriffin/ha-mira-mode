@@ -6,14 +6,16 @@ from dataclasses import asdict
 from typing import Any
 
 from homeassistant.components.bluetooth import async_last_service_info
-from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.components.diagnostics import REDACTED, async_redact_data
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_SERIAL
+from .const import CONF_OUTLET_LABELS, CONF_SERIAL
 from .coordinator import MiraConfigEntry
 
 TO_REDACT = {CONF_ADDRESS, CONF_SERIAL}
+#: Outlet labels are names people chose; an empty one (a hidden outlet) is kept.
+OPTIONS_TO_REDACT = set(CONF_OUTLET_LABELS)
 
 
 async def async_get_config_entry_diagnostics(
@@ -26,7 +28,7 @@ async def async_get_config_entry_diagnostics(
     return {
         "entry": {
             "data": async_redact_data(dict(entry.data), TO_REDACT),
-            "options": dict(entry.options),
+            "options": async_redact_data(dict(entry.options), OPTIONS_TO_REDACT),
         },
         "last_update_success": coordinator.last_update_success,
         "connected": coordinator.client.connected,
@@ -59,11 +61,13 @@ async def async_get_config_entry_diagnostics(
         "advertisement": None
         if advert is None
         else {
-            "name": advert.name,
+            # Valves advertise the name they were given, often a room or a person.
+            "name": REDACTED,
             "rssi": advert.rssi,
             "service_uuids": advert.service_uuids,
+            # None of the manufacturer data is understood yet, so only its shape.
             "manufacturer_data": {
-                str(key): value.hex() for key, value in advert.manufacturer_data.items()
+                str(key): f"{len(value)} bytes" for key, value in advert.manufacturer_data.items()
             },
         },
     }
