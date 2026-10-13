@@ -92,7 +92,8 @@ Bluetooth proxy.
 > outlet limits) were proven on hardware with an earlier, YAML-configured version of this code; the last run and the
 > outlet limits match what the Mira app shows. The setup flow, in-flow pairing and per-outlet switching are covered by
 > tests against a simulated valve but haven't been run on a real valve yet. The hot inlet temperature is experimental
-> (see [Entities](#entities)). Reports either way are very welcome.
+> (see [Entities](#entities)). The dial-model pairing menu and the ten-device limit haven't been checked on a valve
+> here either, and CI tests against Home Assistant 2026.9. Reports either way are very welcome.
 
 Other valves in the current range should work, but only the
 outlets your unit actually has will do anything.
