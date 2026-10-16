@@ -449,6 +449,12 @@ mypy custom_components/mira_mode
 The protocol tests use replies recorded from real valves. CI also runs
 `hassfest` and the HACS validation action.
 
+## Support
+
+Mira Mode for Home Assistant is free and open source. If it made your
+showers better, you can [buy me a coffee](https://buymeacoffee.com/haydengriffin).
+Bug reports and pull requests are just as welcome.
+
 ## Credits
 
 - **[Ryan Shaw / mira-mode-control](https://github.com/ryan-shaw/mira-mode-control)**
