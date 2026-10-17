@@ -135,6 +135,14 @@ async def test_idle_read_disconnects_afterwards(hass: HomeAssistant, connect: As
     assert reading.outlet_settings == {}
 
 
+async def test_every_connection_requests_authentication(
+    hass: HomeAssistant, connect: AsyncMock
+) -> None:
+    connect.return_value = FakeValve(replies())
+    await MiraClient(hass, ADDRESS).read()
+    assert connect.call_args.kwargs.get("pair") is True
+
+
 async def test_outlet_settings_are_read_when_asked(hass: HomeAssistant, connect: AsyncMock) -> None:
     valve = FakeValve(replies())
     connect.return_value = valve
@@ -260,12 +268,15 @@ async def test_out_of_range(hass: HomeAssistant, connect: AsyncMock) -> None:
     connect.assert_not_awaited()
 
 
-async def test_identify_bonds_before_subscribing(hass: HomeAssistant, connect: AsyncMock) -> None:
+async def test_identify_bonds_while_establishing_connection(
+    hass: HomeAssistant, connect: AsyncMock
+) -> None:
     valve = FakeValve(replies())
     connect.return_value = valve
     info = await MiraClient(hass, ADDRESS).identify(pair=True)
     assert (info.name, info.serial, info.state.running) == ("Demo valve", "0000111122223333", False)
-    assert valve.log[:2] == ["pair", "notify"]
+    assert connect.call_args.kwargs.get("pair") is True
+    assert valve.log[0] == "notify"
     assert valve.log[-1] == "disconnect"
 
 
@@ -287,13 +298,9 @@ async def test_identify_tolerates_unanswered_name_and_serial(
 
 @pytest.mark.parametrize("error", [BleakError("Pairing failed: 129"), NotImplementedError()])
 async def test_pairing_failure(hass: HomeAssistant, connect: AsyncMock, error: Exception) -> None:
-    valve = FakeValve(replies())
-    valve.pair_error = error
-    connect.return_value = valve
+    connect.side_effect = error
     with pytest.raises(PairingFailed):
         await MiraClient(hass, ADDRESS).identify(pair=True)
-    assert "notify" not in valve.log
-    assert valve.log[-1] == "disconnect"
 
 
 async def test_disconnect_while_waiting_fails_fast(hass: HomeAssistant, connect: AsyncMock) -> None:

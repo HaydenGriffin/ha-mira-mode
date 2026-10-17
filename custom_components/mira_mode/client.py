@@ -272,27 +272,24 @@ class MiraClient:
                 disconnected_callback=self._on_disconnect,
                 max_attempts=2,
                 ble_device_callback=self._ble_device,
+                pair=True,
             )
+        except NotImplementedError as err:
+            if pair:
+                raise PairingFailed(type(err).__name__) from err
+            raise ValveUnreachable(type(err).__name__) from err
         except (BleakError, TimeoutError) as err:
-            raise ValveUnreachable(str(err) or type(err).__name__) from err
+            message = str(err) or type(err).__name__
+            if pair and "pair" in message.lower():
+                raise PairingFailed(message) from err
+            raise ValveUnreachable(message) from err
         self._client = client
         try:
-            if pair:
-                await self._pair(client)
             self._reader.reset()
             await client.start_notify(EVENT_CHAR_UUID, self._on_notify)
         except (BleakError, TimeoutError) as err:
             await self._disconnect()
             raise ValveUnreachable(str(err) or type(err).__name__) from err
-
-    async def _pair(self, client: BleakClientWithServiceCache) -> None:
-        # The valve drops an unbonded link as soon as notifications are
-        # requested, so the bond has to exist before subscribing.
-        try:
-            await client.pair()
-        except (BleakError, NotImplementedError, TimeoutError) as err:
-            await self._disconnect()
-            raise PairingFailed(str(err) or type(err).__name__) from err
 
     async def _disconnect(self) -> None:
         client, self._client = self._client, None
